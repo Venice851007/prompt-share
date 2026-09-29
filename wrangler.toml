@@ -1,0 +1,29 @@
+# wrangler.toml (本地 wrangler 部署用; 走 Dashboard Git 集成可忽略,
+# 绑定和变量在 Dashboard -> Workers -> Settings 里配)
+
+name = "prompt-share"
+main = "src/worker.js"
+compatibility_date = "2026-09-01"
+
+# R2 图床 (先在 Dashboard 建好 bucket: prompt-share-imgs, 保持私有)
+[[r2_buckets]]
+binding = "IMGS"
+bucket_name = "prompt-share-imgs"
+
+# KV: 分享元数据 + 待审队列 + 限流计数器
+[[kv_namespaces]]
+binding = "SHARE"
+id = "建好后把 KV namespace ID 填这里"
+
+# 普通变量 (Dashboard -> Settings -> Variables -> Add variable):
+#   ACCESS_TEAM_DOMAIN  如 yourteam.cloudflareaccess.com
+#   ACCESS_AUD          Access Application 的 AUD
+#   ADMIN_EMAILS        管理员邮箱, 逗号分隔
+[vars]
+ACCESS_TEAM_DOMAIN = ""
+ACCESS_AUD = ""
+ADMIN_EMAILS = ""
+
+# Secrets 不要写进文件:
+#   wrangler secret put SIGN_SECRET
+# 或 Dashboard -> Settings -> Variables -> Secret 添加 SIGN_SECRET
