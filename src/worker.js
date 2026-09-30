@@ -1,4 +1,5 @@
-// prompt-share Worker v3 (双语版)
+// prompt-share Worker v3.1 (双语版 + 管理员删除)
+// v3.1 新增: 管理员可在作品详情页删除作品 (仅管理员可见按钮, 接口双重校验)
 // 中 / EN 一键切换: 界面全双语, 提示词支持中英双版本 (上传时可各填一版, 切换时跟着切)
 // 语言判定: Cookie lang > Accept-Language > 默认中文; 右上角切换键写 Cookie 后刷新
 //
@@ -22,6 +23,7 @@
 //   GET  /admin         审核 + 精选管理 (仅管理员)
 //   POST /api/upload    上传 (需登录; prompt_zh / prompt_en 双字段)
 //   POST /api/review    审核操作 approve/reject/unfeature (仅管理员)
+//   POST /api/admin/delete   删除作品 KV + R2 图片 + 全部索引 (仅管理员, 幂等)
 //   POST /api/admin/reindex  给 v1 老数据补索引 (仅管理员, 幂等; GET 亦可, 供自动化兜底)
 //   GET  /healthz       存活检查 (公开)
 //
@@ -204,6 +206,7 @@ zh: {
   working: '处理中…', reindexed: '已补 {n} 条, 刷新页面查看', failed: '失败: ',
   cfApproveFeat: '通过并设为精选?', cfApprove: '通过上架?',
   cfUnfeature: '取消精选?', cfReject: '驳回并删除?',
+  delShare: '🗑 删除作品', cfDelShare: '彻底删除这个作品（含图片）？不可恢复！', deletedMsg: '已删除',
   noPendingAdmin: '🎉 没有待审核的内容', adminOnly: '只有管理员能看',
   eLogin: '未登录, 请从正常入口访问', eFreq: '上传太频繁,请一小时后再试',
   eForm: '请用 multipart 表单上传', eNoFile: '没收到图片文件',
@@ -266,6 +269,7 @@ en: {
   working: 'Working…', reindexed: 'Done: {n} item(s) — refresh to view', failed: 'Failed: ',
   cfApproveFeat: 'Approve and feature?', cfApprove: 'Approve?',
   cfUnfeature: 'Unfeature?', cfReject: 'Reject and delete?',
+  delShare: '🗑 Delete share', cfDelShare: 'Permanently delete this share (including image)? Cannot be undone!', deletedMsg: 'Deleted',
   noPendingAdmin: '🎉 Nothing pending review', adminOnly: 'Admins only',
   eLogin: 'Not signed in — please enter via the normal flow', eFreq: 'Too many uploads — try again in an hour',
   eForm: 'Please upload via multipart form', eNoFile: 'No image file received',
@@ -628,7 +632,7 @@ async function searchPage(env, url, lang) {
 
 /* ---------- 公开: 分享详情 ---------- */
 
-async function sharePage(env, id, lang) {
+async function sharePage(env, id, lang, isAdm) {
   var t = STR[lang];
   var raw = await env.SHARE.get('s:' + id);
   if (!raw) {
@@ -662,8 +666,18 @@ async function sharePage(env, id, lang) {
     '<button style="padding:4px 14px;font-size:13px" onclick="copyP()">' + t.copyPrompt + '</button>' + otherLink + '</div>' +
     '<pre id="p">' + escapeHtml(prompt) + '</pre>' +
     '<p class="hint">' + t.imgExpiry.replace('{h}', Math.round(SIG_TTL_SEC / 3600)) + '</p></div>' +
-    '<p><a href="/upload"><button>' + t.shareCta2 + '</button></a></p>' +
+    '<p><a href="/upload"><button>' + t.shareCta2 + '</button></a>' +
+    (isAdm ? ' <button class="danger" onclick="delShare()">' + t.delShare + '</button>' : '') + '</p>' +
     '<script>' +
+    'var SID=' + JSON.stringify(id) + ';' +
+    'var CF_DEL=' + JSON.stringify(t.cfDelShare) + ';' +
+    'var MSG_DEL=' + JSON.stringify(t.deletedMsg) + ';' +
+    'function delShare(){' +
+    'if(!confirm(CF_DEL))return;' +
+    'fetch("/api/admin/delete",{method:"POST",headers:{"content-type":"application/json"},' +
+    'body:JSON.stringify({id:SID})}).then(function(r){return r.json();})' +
+    '.then(function(d){if(d.ok){alert(MSG_DEL);location.href="/";}else{alert(d.error||"fail");}})' +
+    '.catch(function(e){alert(String(e));});}' +
     'var PT=' + JSON.stringify(prompt).replace(/<\//g, '<\\/') + ';' +
     'var MSG_OK=' + JSON.stringify(t.copiedPrompt) + ';' +
     'var MSG_FAIL=' + JSON.stringify(t.copyFail) + ';' +
@@ -1005,6 +1019,59 @@ async function apiReview(env, req, lang) {
   return json({ ok: false, error: t.eUnknown }, 400);
 }
 
+/* 管理员删除作品: KV 主记录 + 待审(若有) + R2 图片 + 全部索引 (仅管理员, 幂等) */
+async function apiDelete(env, req, lang) {
+  var t = STR[lang];
+  var em = await accessEmail(req, env);
+  if (!isAdmin(env, em)) return json({ ok: false, error: t.eAdminOnly }, 403);
+  var body;
+  try { body = await req.json(); } catch (e) { return json({ ok: false, error: t.eBadParam }, 400); }
+  var id = String(body.id || '');
+  if (!/^[A-Za-z0-9]{10}$/.test(id)) return json({ ok: false, error: t.eBadId }, 400);
+
+  var meta = null;
+  try { meta = await env.SHARE.get('s:' + id, 'json'); } catch (e) {}
+
+  if (meta) {
+    // 索引 key 可按规则直接构造, 无需全表扫描
+    var inv = invTs(meta.createdAt);
+    var jobs = [
+      env.SHARE.delete('idx:new:' + inv + ':' + id),
+      env.SHARE.delete('idx:user:' + String(meta.owner || '').toLowerCase() + ':' + inv + ':' + id),
+      env.SHARE.delete('idx:featured:' + inv + ':' + id)
+    ];
+    var tags = meta.tags || [];
+    for (var i = 0; i < tags.length; i++) {
+      jobs.push(env.SHARE.delete('idx:tag:' + tags[i] + ':' + inv + ':' + id));
+    }
+    jobs.push(env.SHARE.delete('s:' + id));
+    jobs.push(env.SHARE.delete('pending:' + id));
+    await Promise.all(jobs);
+  } else {
+    // 主记录已不在: 兜底清掉可能残留的索引 (按后缀匹配)
+    var prefixes = ['idx:new:', 'idx:user:', 'idx:tag:', 'idx:featured:'];
+    for (var p = 0; p < prefixes.length; p++) {
+      var cursor = undefined;
+      for (;;) {
+        var r = await env.SHARE.list({ prefix: prefixes[p], cursor: cursor });
+        var dels = [];
+        for (var k = 0; k < r.keys.length; k++) {
+          var kn = r.keys[k].name;
+          if (kn.slice(-11) === ':' + id) dels.push(env.SHARE.delete(kn));
+        }
+        await Promise.all(dels);
+        if (r.list_complete) break;
+        cursor = r.cursor;
+        if (!cursor) break;
+      }
+    }
+    await env.SHARE.delete('s:' + id);
+    await env.SHARE.delete('pending:' + id);
+  }
+  try { await env.IMGS.delete('img:' + id); } catch (e) {}
+  return json({ ok: true });
+}
+
 /* 一次性: 给 v1 老数据补 v2 索引 (管理员, 幂等, 多跑几次没关系) */
 async function apiReindex(env, req, lang) {
   var t = STR[lang];
@@ -1051,7 +1118,7 @@ export default {
       return new Response('服务端未配置 SIGN_SECRET', { status: 500 });
     }
 
-    if (path === '/healthz') return json({ ok: true, version: 'v3-i18n' });
+    if (path === '/healthz') return json({ ok: true, version: 'v3.1-del' });
 
     // 语言切换: ?lang=zh|en -> 写 Cookie 后跳回干净地址 (仅 GET)
     if (req.method === 'GET') {
@@ -1078,7 +1145,10 @@ export default {
     }
     if (path === '/search' && req.method === 'GET') return searchPage(env, url, lang);
     var mF = path.match(/^\/f\/([A-Za-z0-9]{10})$/);
-    if (mF && req.method === 'GET') return sharePage(env, mF[1], lang);
+    if (mF && req.method === 'GET') {
+      var emF = await accessEmail(req, env);
+      return sharePage(env, mF[1], lang, isAdmin(env, emF));
+    }
     var mI = path.match(/^\/img\/([A-Za-z0-9]{10})$/);
     if (mI && req.method === 'GET') return serveImage(env, req, mI[1], url, lang);
 
@@ -1100,6 +1170,7 @@ export default {
     }
     if (path === '/api/upload' && req.method === 'POST') return apiUpload(env, req, url, lang);
     if (path === '/api/review' && req.method === 'POST') return apiReview(env, req, lang);
+    if (path === '/api/admin/delete' && req.method === 'POST') return apiDelete(env, req, lang);
     if (path === '/api/admin/reindex' && (req.method === 'POST' || req.method === 'GET')) return apiReindex(env, req, lang);
 
     return new Response('Not found', { status: 404 });
