@@ -1,7 +1,7 @@
 // prompt-share Worker v3.3 (双语版 + 管理员删除 + 编辑 + 多图)
 // v3.3 新增: 一个提示词可配多张图 (上传多选/编辑加图/勾选删一张或多张), GET /img/:id/:seq
 // 中 / EN 一键切换: 界面全双语, 提示词支持中英双版本 (上传时可各填一版, 切换时跟着切)
-// 语言判定: Cookie lang > Accept-Language > 默认中文; 右上角切换键写 Cookie 后刷新
+// 语言判定: Cookie lang > Accept-Language > 默认英文; 右上角切换键写 Cookie 后刷新
 //
 // 绑定要求 (Dashboard -> Workers -> Settings -> Bindings):
 //   R2  bucket    binding=IMGS   bucket 名: prompt-share-imgs (保持私有)
@@ -140,13 +140,13 @@ function getCookie(req, name) {
   return m ? decodeURIComponent(m[1]) : '';
 }
 
-// 语言判定: Cookie > Accept-Language > 默认中文
+// 语言判定: Cookie > Accept-Language > 默认英文 (全球化: 非中文浏览器默认英文)
 function getLang(req) {
   var c = getCookie(req, 'lang');
   if (c === 'zh' || c === 'en') return c;
   var al = req.headers.get('accept-language') || '';
   var first = al.split(',')[0].trim().toLowerCase();
-  return first.indexOf('en') === 0 ? 'en' : 'zh';
+  return first.indexOf('zh') === 0 ? 'zh' : 'en';
 }
 
 // 取当前语言的提示词: en 优先 prompt_en, zh 优先 prompt_zh, 都没有则回退到 prompt (老数据)
@@ -319,6 +319,10 @@ function htmlPage(title, body, lang, desc) {
     '<!DOCTYPE html><html lang="' + (lang === 'en' ? 'en' : 'zh-CN') + '"><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width,initial-scale=1">' +
     '<meta name="description" content="' + escapeHtml(desc || t.tagline) + '">' +
+    '<meta property="og:type" content="website">' +
+    '<meta property="og:title" content="' + escapeHtml(title) + '">' +
+    '<meta property="og:description" content="' + escapeHtml(desc || t.tagline) + '">' +
+    '<meta name="twitter:card" content="summary">' +
     '<title>' + escapeHtml(title) + '</title>' +
     '<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%20%20%3Crect%20x%3D%222%22%20y%3D%222%22%20width%3D%2260%22%20height%3D%2260%22%20rx%3D%2214%22%20fill%3D%22%23151a24%22%20stroke%3D%22%232c3342%22%20stroke-width%3D%222%22%2F%3E%20%20%3Crect%20x%3D%2215%22%20y%3D%2219%22%20width%3D%2234%22%20height%3D%2226%22%20rx%3D%226%22%20fill%3D%22none%22%20stroke%3D%22%237aa2ff%22%20stroke-width%3D%223.5%22%2F%3E%20%20%3Ccircle%20cx%3D%2224.5%22%20cy%3D%2227.5%22%20r%3D%223.4%22%20fill%3D%22%237aa2ff%22%2F%3E%20%20%3Cpath%20d%3D%22M17%2040%20L28%2030%20L35%2036.5%20L41%2031.5%20L47%2038%22%20fill%3D%22none%22%20stroke%3D%22%237aa2ff%22%20stroke-width%3D%223.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E">' +
     '<style>' +
@@ -1678,7 +1682,7 @@ export default {
       return new Response('服务端未配置 SIGN_SECRET', { status: 500 });
     }
 
-    if (path === '/healthz') return json({ ok: true, version: 'v3.6-logo' });
+    if (path === '/healthz') return json({ ok: true, version: 'v3.7-global' });
 
     // 语言切换: ?lang=zh|en -> 写 Cookie 后跳回干净地址 (仅 GET)
     if (req.method === 'GET') {
