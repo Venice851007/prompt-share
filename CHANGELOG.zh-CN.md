@@ -4,6 +4,10 @@
   <strong>中文</strong> | <a href="CHANGELOG.md">English</a>
 </p>
 
+## v3.9-nodl (2026-09-30)
+
+- 防下载：全站图片禁用右键“图片另存为”、禁止拖拽拖出、禁用 iOS 长按保存菜单、图片不可选中。提示词一键复制不受影响。
+
 ## v3.8-model (2026-09-30)
 
 - 上传 / 编辑新增选填项「出图模型」（如 Nano Banana、GPT-4o、Midjourney）

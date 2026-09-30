@@ -4,6 +4,10 @@
   <a href="CHANGELOG.zh-CN.md">中文</a> | <strong>English</strong>
 </p>
 
+## v3.9-nodl (2026-09-30)
+
+- Anti-download: right-click "save image" disabled on all images, drag-out blocked, iOS long-press save callout disabled, images not selectable/draggable. Prompt one-click copy is unaffected.
+
 ## v3.8-model (2026-09-30)
 
 - New optional "generation model" field on upload/edit (e.g. Nano Banana, GPT-4o, Midjourney)
