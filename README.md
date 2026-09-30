@@ -107,6 +107,11 @@ Zero Trust Dashboard → Access → Applications:
 6. 换个普通用户邮箱登录 (先加进 Policy) → 上传 → 提示"已提交审核",
    `/mine` 显示待审核; 管理员 `/admin` 点"通过并精选" → 上架。
 
+## Git 自动部署
+
+
+Worker `prompt-share` 已在 Cloudflare Dashboard (Workers & Pages → prompt-share → Settings → 构建) 连接本仓库; push 到 `main` 分支后, Workers Builds 会自动构建并上线, 构建命令留空、部署命令 `npx wrangler deploy`。
+
 ## 免费额度 (2026 年)
 
 - R2: 每月 10GB 存储 + 100 万次写入 + 1000 万次读取, 出站流量免费
