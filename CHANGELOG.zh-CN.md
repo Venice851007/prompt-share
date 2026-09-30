@@ -4,6 +4,11 @@
   <strong>中文</strong> | <a href="CHANGELOG.md">English</a>
 </p>
 
+## v3.7-global (2026-09-30)
+
+- 默认语言改为英文优先：非中文浏览器默认显示英文（浏览器语言为中文则显示中文，Cookie 手动选择仍优先）
+- 新增 Open Graph / Twitter Card 分享预览标签，链接分享出去能显示标题摘要
+
 ## v3.6-logo (2026-09-30)
 
 - 项目视觉标识：深色圆角标 + 蓝色图片图形（`assets/logo.svg`）

@@ -4,6 +4,11 @@
   <a href="CHANGELOG.zh-CN.md">中文</a> | <strong>English</strong>
 </p>
 
+## v3.7-global (2026-09-30)
+
+- Default language is now English-first: non-Chinese browsers get English unless the browser locale is Chinese (Cookie choice still takes precedence)
+- Added Open Graph / Twitter Card meta tags so shared links render proper previews
+
 ## v3.6-logo (2026-09-30)
 
 - Brand identity: dark rounded badge with a blue image glyph (`assets/logo.svg`)
