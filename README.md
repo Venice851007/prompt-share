@@ -1,16 +1,21 @@
-# Prompt Share — 提示词 + 图片分享小站 (Access 版)
+# Prompt Share — 提示词 + 图片分享小站 (v2 公开画廊版)
 
 把"提示词 + 出图"打包成一个短链接,发到 X / 小红书 / 微信都行。
+首页是公开画廊: 访客不用登录就能逛精选和最新作品、搜标签;
+登录后才能上传, 分享出去的灵感可以一键复制提示词。
 技术栈: Cloudflare Workers + R2(图床) + KV(元数据) + Access(登录),
 全免费额度。
 
 ## 角色与流程
 
-- **管理员** (ADMIN_EMAILS 名单): 上传直接上架, 拿到分享链接;
-  在 `/admin` 审核普通用户的待审内容。
+- **管理员** (ADMIN_EMAILS 名单): 上传直接上架 (可设精选), 拿到分享链接;
+  在 `/admin` 审核普通用户的待审内容、管理精选。
 - **普通用户** (Access 名单里、非管理员): 上传后进**待审队列**,
-  管理员在 `/admin` 点"通过上架"或"驳回删除"。
-- **访客**: 只能看公开的分享页 `/f/:id`, 不用登录。
+  管理员在 `/admin` 点"通过上架 / 通过并精选 / 驳回删除";
+  在 `/mine` 看自己的待审和已上架作品。
+- **访客**: 不用登录, 首页画廊随便逛 (`/` 精选+最新+标签云、
+  `/tag/:tag` 标签页、`/search` 搜索), 分享页 `/f/:id` 可看图、
+  一键复制提示词。
 
 不开放注册: 加人 = 管理员去 Access Policy 的邮箱名单里加一行。
 50 人上限是 Access 免费版的硬上限, 加满 51 个时 Cloudflare 会提示升级,
@@ -18,12 +23,19 @@
 
 ## 功能
 
-- `GET /` 上传页 (需 Access 登录, 显示当前身份)
-- `POST /api/share` 上传 (管理员直发, 普通用户进待审)
-- `GET /f/:id` 分享页 (公开)
+- `GET /` 公开画廊首页 (精选 + 最新分页 + 标签云 + 搜索框)
+- `GET /tag/:tag` 公开标签页
+- `GET /search?q=` 公开搜索 (标题/标签/提示词, 近 150 条内过滤)
+- `GET /f/:id` 分享详情页 (公开, 一键复制提示词)
 - `GET /img/:id` 图片代理 (公开, 不暴露 R2 直链)
-- `GET /admin` 审核页 (仅管理员)
-- `POST /api/admin/approve` / `reject` 审核操作 (仅管理员)
+- `GET /upload` 上传页 (需 Access 登录, 显示当前身份; 管理员可设精选)
+- `GET /mine` 我的作品 (需登录: 待审 + 已上架)
+- `GET /admin` 审核 + 精选管理 (仅管理员)
+- `POST /api/upload` 上传 (管理员直发, 普通用户进待审)
+- `POST /api/review` 审核操作 approve/reject/unfeature (仅管理员)
+
+**不做的**: 浏览/点赞统计、评论、关注 —— 50 人社区不需要,
+KV 免费写额度 (每天 1000 次) 也撑不起全量计数。
 
 ## 防刷
 
@@ -68,10 +80,15 @@ Settings → Variables → Add variable:
 
 ### 5. 配 Cloudflare Access (Zero Trust)
 
-Zero Trust Dashboard → Access → Add an application → Self-hosted:
-- Application domain: 填第 3 步的域名 (workers.dev 或你绑的自定义域名)
-- **只保护这三条**: `/`, `/api/*`, `/admin/*`
-  (Path-based例外: `/f/*` 和 `/img/*` 设为 Bypass, 公开访问)
+Zero Trust Dashboard → Access → Applications:
+
+**应用一 `prompt-share-public` (Bypass, 所有人)** —
+两个域名 (workers.dev 和自定义域名) 各加:
+`/`、`/tag/*`、`/search*`、`/f/*`、`/img/*`
+(注意 `/` 是前缀匹配, 会覆盖全站; 登录区靠下面更具体的路径优先命中)
+
+**应用二 `prompt-share` (Allow, 邮箱白名单)** —
+两个域名各加: `/upload`、`/mine`、`/api/*`、`/admin/*`
 - Policy → Allow → Emails: 填管理员 + 普通用户的邮箱 (≤50 人免费)
 - 建好后把应用总览页的 **AUD** (一串 hex) 和你的 Team Domain
   (如 `yourteam.cloudflareaccess.com`) 回填到第 4 步的变量, 再 Redeploy。
@@ -80,10 +97,15 @@ Zero Trust Dashboard → Access → Add an application → Self-hosted:
 
 ### 6. 验证
 
-1. 浏览器无痕打开分享域名 → 应跳 Access 登录。
-2. 管理员登录 → 上传一张图 → 直接拿到 `/f/` 链接。
-3. 换个普通用户邮箱登录 (先加进 Policy) → 上传 → 提示"已提交审核"。
-4. 管理员开 `/admin` → 看到待审 → 点通过 → 链接生效。
+1. 浏览器无痕打开 https://prompt.minispacex.com/ → **不跳登录**,
+   直接看到画廊首页 (精选/最新/标签云)。
+2. 点"分享作品" → 跳 Access 登录。
+3. 管理员登录 → `/upload` 上传一张图 (标题+标签, 勾选精选) →
+   直接拿到 `/f/` 链接; 首页精选区出现这张。
+4. 点开 `/f/` 链接 → 无痕也能看, "一键复制"按钮可用。
+5. `/tag/人物`、`/search?q=人物` 有结果; `/mine` 能看到自己的作品。
+6. 换个普通用户邮箱登录 (先加进 Policy) → 上传 → 提示"已提交审核",
+   `/mine` 显示待审核; 管理员 `/admin` 点"通过并精选" → 上架。
 
 ## 免费额度 (2026 年)
 
