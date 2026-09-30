@@ -344,6 +344,16 @@ function htmlPage(title, body, lang, desc) {
     '.card-item:hover{transform:translateY(-3px);border-color:#4f7cff66}' +
     '.thumb{background:#0b0d11;overflow:hidden}' +
     '.thumb img{width:100%;height:auto;display:block}' +
+    '.ccar{position:relative}' +
+    '.ccar .ccimg{display:none}' +
+    '.ccar .ccimg.on{display:block}' +
+    '.ccbtn{position:absolute;top:50%;transform:translateY(-50%);width:30px;height:30px;border-radius:50%;border:0;' +
+    'background:rgba(0,0,0,.55);color:#fff;font-size:18px;line-height:1;cursor:pointer;opacity:0;transition:opacity .15s;z-index:2}' +
+    '.card-item:hover .ccbtn{opacity:1}' +
+    '.ccbtn.prev{left:8px}.ccbtn.next{right:8px}' +
+    '@media(hover:none){.ccbtn{opacity:.85}}' +
+    '.ccar .ccount{position:absolute;right:8px;bottom:8px;background:rgba(0,0,0,.55);color:#fff;font-size:11px;' +
+    'padding:2px 8px;border-radius:10px;z-index:2}' +
     '.fhero{position:relative;margin:10px calc(50% - 50vw) 0;overflow:hidden;background:#0b0d11}' +
     '.ftrack{display:flex;transition:transform .35s ease;height:min(62vh,560px);min-height:300px}' +
     '.fslide{min-width:100%;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden}' +
@@ -413,6 +423,32 @@ function htmlPage(title, body, lang, desc) {
     '<script>function setLang(l){document.cookie="lang="+l+";path=/;max-age=31536000;SameSite=Lax";location.reload();}</script>' +
     body +
     '<footer>' + t.footer + '</footer>' +
+    '<script>(function(){' +
+    'function cgo(car,d){var n=parseInt(car.getAttribute("data-n"),10)||1;' +
+    'var imgs=car.querySelectorAll(".ccimg");var cur=0;' +
+    'for(var i=0;i<imgs.length;i++){if(imgs[i].className.indexOf(" on")>=0)cur=i;}' +
+    'var nx=(cur+d+n)%n;' +
+    'imgs[cur].className=imgs[cur].className.replace(" on","");' +
+    'imgs[nx].className+=" on";' +
+    'var c=car.querySelector(".ccount");if(c)c.textContent=(nx+1)+"/"+n;}' +
+    'var cars=document.querySelectorAll(".ccar");' +
+    'for(var k=0;k<cars.length;k++){(function(car){' +
+    'var btns=car.querySelectorAll(".ccbtn");' +
+    'for(var b=0;b<btns.length;b++){' +
+    'btns[b].addEventListener("click",function(e){e.preventDefault();e.stopPropagation();' +
+    'cgo(car,this.className.indexOf("prev")>=0?-1:1);});}' +
+    'var x0=null,y0=null;' +
+    'car.addEventListener("touchstart",function(e){x0=e.touches[0].clientX;y0=e.touches[0].clientY;},{passive:true});' +
+    'car.addEventListener("touchend",function(e){if(x0===null)return;' +
+    'var dx=e.changedTouches[0].clientX-x0,dy=e.changedTouches[0].clientY-y0;x0=null;' +
+    'if(Math.abs(dx)>40&&Math.abs(dx)>Math.abs(dy)){' +
+    'cgo(car,dx<0?1:-1);car.setAttribute("data-swp","1");' +
+    'setTimeout(function(){car.removeAttribute("data-swp");},400);}}, {passive:true});' +
+    '})(cars[k]);}' +
+    'document.addEventListener("click",function(e){' +
+    'var t=e.target;var car=t.closest?t.closest(".ccar"):null;' +
+    'if(car&&car.hasAttribute("data-swp")){e.preventDefault();e.stopPropagation();}},true);' +
+    '})();</script>' +
     '</div></body></html>',
     { headers: { 'content-type': 'text/html; charset=utf-8' } });
 }
@@ -575,10 +611,25 @@ async function signedImgUrl(env, id, seq) {
   return '/img/' + id + (seq ? '/' + seq : '') + '?exp=' + exp + '&sig=' + encodeURIComponent(sig);
 }
 
-function cardHtml(imgUrl, meta, lang) {
+async function cardHtml(env, meta, lang) {
   var tags = (meta.tags || []).map(function (t) { return '#' + escapeHtml(t); }).join(' ');
-  return '<a class="card-item" href="/f/' + escapeHtml(meta.id) + '">' +
-    '<div class="thumb"><img loading="lazy" src="' + imgUrl + '" alt="' + escapeHtml(meta.title || '') + '"></div>' +
+  var list = imgList(meta);
+  var thumb;
+  if (list.length > 1) {
+    var imgs = [];
+    for (var i = 0; i < list.length; i++) {
+      imgs.push('<img class="ccimg' + (i === 0 ? ' on' : '') + '"' + (i === 0 ? '' : ' loading="lazy"') +
+        ' src="' + await signedImgUrl(env, meta.id, list[i].seq) + '" alt="' + escapeHtml(meta.title || '') + '">');
+    }
+    thumb = '<div class="thumb ccar" data-n="' + list.length + '">' + imgs.join('') +
+      '<button class="ccbtn prev" aria-label="prev">‹</button>' +
+      '<button class="ccbtn next" aria-label="next">›</button>' +
+      '<span class="ccount">1/' + list.length + '</span></div>';
+  } else {
+    thumb = '<div class="thumb"><img loading="lazy" src="' + await signedImgUrl(env, meta.id) +
+      '" alt="' + escapeHtml(meta.title || '') + '"></div>';
+  }
+  return '<a class="card-item" href="/f/' + escapeHtml(meta.id) + '">' + thumb +
     '<div class="cmeta"><div class="ct">' + escapeHtml(meta.title || STR[lang].untitled) + '</div>' +
     '<div class="csub">' + fmtDate(meta.createdAt, lang) + '</div>' +
     (tags ? '<div class="ctags">' + tags + '</div>' : '') +
@@ -588,7 +639,7 @@ function cardHtml(imgUrl, meta, lang) {
 async function masonryHtml(env, metas, lang) {
   var parts = [];
   for (var i = 0; i < metas.length; i++) {
-    parts.push(cardHtml(await signedImgUrl(env, metas[i].id), metas[i], lang));
+    parts.push(await cardHtml(env, metas[i], lang));
   }
   return '<div class="masonry">' + parts.join('') + '</div>';
 }
@@ -1625,7 +1676,7 @@ export default {
       return new Response('服务端未配置 SIGN_SECRET', { status: 500 });
     }
 
-    if (path === '/healthz') return json({ ok: true, version: 'v3.4.2-feattoggle' });
+    if (path === '/healthz') return json({ ok: true, version: 'v3.5-cardswipe' });
 
     // 语言切换: ?lang=zh|en -> 写 Cookie 后跳回干净地址 (仅 GET)
     if (req.method === 'GET') {
