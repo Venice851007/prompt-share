@@ -24,7 +24,7 @@
 //   GET  /admin         审核 + 精选管理 (仅管理员)
 //   POST /api/upload    上传 (需登录; prompt_zh / prompt_en 双字段)
 //   POST /api/edit      更新作品: 标题/中英提示词/标签/可选换图 (作者或管理员; 标签索引差异更新, createdAt 不变)
-//   POST /api/review    审核操作 approve/reject/unfeature (仅管理员)
+//   POST /api/review    审核操作 approve/reject/unfeature/feature (仅管理员)
 //   POST /api/admin/delete   删除作品 KV + R2 图片 + 全部索引 (仅管理员, 幂等)
 //   POST /api/admin/reindex  给 v1 老数据补索引 (仅管理员, 幂等; GET 亦可, 供自动化兜底)
 //   GET  /healthz       存活检查 (公开)
@@ -207,12 +207,13 @@ zh: {
   noPub: '还没有上架的作品, <a href="/upload">去分享第一张 →</a>',
   badgePending: '待审核',
   reviewTitle: '🛡️ 待审核', featTitle: '⭐ 精选管理', noFeat: '暂无精选内容',
+  pubTitle: '📚 已发布作品',
   approve: '✅ 通过上架', approveFeat: '⭐ 通过并精选',
-  reject: '🗑 驳回删除', unfeature: '取消精选',
+  reject: '🗑 驳回删除', unfeature: '取消精选', feature: '⭐ 设为精选',
   maint: '🛠 维护', maintHint: '给 v1 老数据补首页索引（幂等）', reindexBtn: '补建索引',
   working: '处理中…', reindexed: '已补 {n} 条, 刷新页面查看', failed: '失败: ',
   cfApproveFeat: '通过并设为精选?', cfApprove: '通过上架?',
-  cfUnfeature: '取消精选?', cfReject: '驳回并删除?',
+  cfUnfeature: '取消精选?', cfReject: '驳回并删除?', cfFeature: '设为精选?',
   delShare: '🗑 删除作品', delSure: '⚠️ 确认删除？不可恢复', deletedMsg: '已删除',
   edit: '✏️ 编辑', editTitle: '编辑作品', save: '💾 保存修改', backToShare: '← 返回作品页',
   curImg: '当前图片', keepImg: '换图（不换请留空）', saved: '已保存',
@@ -280,12 +281,13 @@ en: {
   noPub: 'No published works yet — <a href="/upload">share your first →</a>',
   badgePending: 'Pending',
   reviewTitle: '🛡️ Pending review', featTitle: '⭐ Featured', noFeat: 'No featured items',
+  pubTitle: '📚 Published',
   approve: '✅ Approve', approveFeat: '⭐ Approve & feature',
-  reject: '🗑 Reject & delete', unfeature: 'Unfeature',
+  reject: '🗑 Reject & delete', unfeature: 'Unfeature', feature: '⭐ Feature',
   maint: '🛠 Maintenance', maintHint: 'Backfill index for legacy data (idempotent)', reindexBtn: 'Rebuild index',
   working: 'Working…', reindexed: 'Done: {n} item(s) — refresh to view', failed: 'Failed: ',
   cfApproveFeat: 'Approve and feature?', cfApprove: 'Approve?',
-  cfUnfeature: 'Unfeature?', cfReject: 'Reject and delete?',
+  cfUnfeature: 'Unfeature?', cfReject: 'Reject and delete?', cfFeature: 'Feature this?',
   delShare: '🗑 Delete share', delSure: '⚠️ Confirm delete? Cannot be undone', deletedMsg: 'Deleted',
   edit: '✏️ Edit', editTitle: 'Edit share', save: '💾 Save changes', backToShare: '← Back to share',
   curImg: 'Current image', keepImg: 'Replace image (leave empty to keep current)', saved: 'Saved',
@@ -1164,6 +1166,30 @@ async function adminPage(env, lang) {
   }
   if (!featCards) featCards = '<p class="hint">' + t.noFeat + '</p>';
 
+  // 已发布作品: 每条可切换精选状态
+  var pubCards = '';
+  var seenPub = {};
+  for (var pg = 1; pg <= 3; pg++) {
+    var pl = await listByIndex(env, 'idx:new:', pg);
+    for (var pi = 0; pi < pl.items.length; pi++) {
+      var pm = pl.items[pi];
+      if (seenPub[pm.id]) continue;
+      seenPub[pm.id] = 1;
+      var isF = !!pm.featured;
+      pubCards += '<div class="card" style="display:flex;gap:14px;align-items:center">' +
+        '<a href="/f/' + escapeHtml(pm.id) + '"><img src="' + await signedImgUrl(env, pm.id) +
+        '" style="width:90px;height:90px;object-fit:cover;border-radius:8px"></a>' +
+        '<div style="flex:1"><b>' + escapeHtml(pm.title || t.untitled) + '</b>' +
+        '<div class="hint">' + fmtDate(pm.createdAt, lang) + (isF ? ' ⭐' : '') + '</div></div>' +
+        (isF
+          ? '<button class="ghost" onclick="audit(\'' + pm.id + '\',\'unfeature\')">' + t.unfeature + '</button>'
+          : '<button class="okbtn" onclick="audit(\'' + pm.id + '\',\'feature\')">' + t.feature + '</button>') +
+        '</div>';
+    }
+    if (!pl.hasMore) break;
+  }
+  if (!pubCards) pubCards = '<p class="hint">' + t.noPub + '</p>';
+
   return htmlPage(t.admin + ' - PromptShare',
     '<div class="sec-t"><h2>' + t.reviewTitle + ' (' + list.keys.length + ')</h2><a href="/">' + t.backHome + '</a></div>' +
     '<div class="card"><b>' + t.maint + '</b> <span class="hint">' + t.maintHint + '</span> ' +
@@ -1171,16 +1197,19 @@ async function adminPage(env, lang) {
     cards +
     '<div class="sec-t"><h2>' + t.featTitle + ' (' + featItems.length + ')</h2></div>' +
     featCards +
+    '<div class="sec-t"><h2>' + t.pubTitle + '</h2></div>' +
+    pubCards +
     '<script>' +
     'var CF_AF=' + JSON.stringify(t.cfApproveFeat) + ';' +
     'var CF_A=' + JSON.stringify(t.cfApprove) + ';' +
     'var CF_UF=' + JSON.stringify(t.cfUnfeature) + ';' +
+    'var CF_F=' + JSON.stringify(t.cfFeature) + ';' +
     'var CF_RJ=' + JSON.stringify(t.cfReject) + ';' +
     'var T_WORKING=' + JSON.stringify(t.working) + ';' +
     'var T_DONE=' + JSON.stringify(t.reindexed) + ';' +
     'var T_FAIL=' + JSON.stringify(t.failed) + ';' +
     'async function audit(id, act, featured){' +
-    'var tip = act==="approve" ? (featured?CF_AF:CF_A) : (act==="unfeature"?CF_UF:CF_RJ);' +
+    'var tip = act==="approve" ? (featured?CF_AF:CF_A) : act==="unfeature" ? CF_UF : act==="feature" ? CF_F : CF_RJ;' +
     'if(!confirm(tip))return;' +
     'var r=await fetch("/api/review",{method:"POST",' +
     'headers:{"content-type":"application/json"},' +
@@ -1471,6 +1500,21 @@ async function apiReview(env, req, lang) {
     return json({ ok: true });
   }
 
+  // 已发布作品: 设为精选 (幂等)
+  if (action === 'feature') {
+    var fraw = await env.SHARE.get('s:' + id);
+    if (!fraw) return json({ ok: false, error: t.eNotFound }, 404);
+    var fmeta = JSON.parse(fraw);
+    if (!fmeta.featured) {
+      fmeta.featured = true;
+      await Promise.all([
+        env.SHARE.put('s:' + id, JSON.stringify(fmeta)),
+        env.SHARE.put('idx:featured:' + invTs(fmeta.createdAt) + ':' + id, id)
+      ]);
+    }
+    return json({ ok: true });
+  }
+
   return json({ ok: false, error: t.eUnknown }, 400);
 }
 
@@ -1581,7 +1625,7 @@ export default {
       return new Response('服务端未配置 SIGN_SECRET', { status: 500 });
     }
 
-    if (path === '/healthz') return json({ ok: true, version: 'v3.4.1-noauthor' });
+    if (path === '/healthz') return json({ ok: true, version: 'v3.4.2-feattoggle' });
 
     // 语言切换: ?lang=zh|en -> 写 Cookie 后跳回干净地址 (仅 GET)
     if (req.method === 'GET') {
