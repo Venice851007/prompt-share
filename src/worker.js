@@ -333,6 +333,13 @@ function htmlPage(title, body, lang, desc) {
     'body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;' +
     'background:#0f1115;color:#e8eaf0;margin:0;padding:0;line-height:1.6}' +
     'img{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}' +
+    '.thumb img,.dslide img{transition:transform .35s ease}' +
+    '.thumb:hover img{transform:scale(1.07)}' +
+    '.dslide:hover img{transform:scale(1.05)}' +
+    '@keyframes jiggle{0%{transform:scale(1)}16%{transform:scale(1.1,.88)}34%{transform:scale(.93,1.12)}' +
+    '52%{transform:scale(1.06,.94)}70%{transform:scale(.98,1.04)}to{transform:scale(1)}}' +
+    'img.jiggle{animation:jiggle .42s ease-in-out}' +
+    '@media (prefers-reduced-motion:reduce){.thumb img,.dslide img{transition:none}img.jiggle{animation:none}}' +
     '.wrap{max-width:1080px;margin:0 auto;padding:24px 20px 60px}' +
     'header.top{display:flex;align-items:center;justify-content:space-between;padding:18px 0;flex-wrap:wrap;gap:12px}' +
     '.logo{font-size:22px;font-weight:700;color:#fff;text-decoration:none;display:inline-flex;align-items:center}' +
@@ -462,6 +469,10 @@ function htmlPage(title, body, lang, desc) {
     'if(car&&car.hasAttribute("data-swp")){e.preventDefault();e.stopPropagation();}},true);' +
     'document.addEventListener("contextmenu",function(e){var t=e.target;if(t&&t.tagName==="IMG")e.preventDefault();},true);' +
     'document.addEventListener("dragstart",function(e){var t=e.target;if(t&&t.tagName==="IMG")e.preventDefault();},true);' +
+    'document.addEventListener("click",function(e){var t=e.target;' +
+    'if(t&&t.tagName==="IMG"){t.classList.remove("jiggle");void t.offsetWidth;t.classList.add("jiggle");}},true);' +
+    'document.addEventListener("animationend",function(e){' +
+    'if(e.animationName==="jiggle")e.target.classList.remove("jiggle");},true);' +
     '})();</script>' +
     '</div></body></html>',
     { headers: { 'content-type': 'text/html; charset=utf-8' } });
@@ -1701,7 +1712,7 @@ export default {
       return new Response('服务端未配置 SIGN_SECRET', { status: 500 });
     }
 
-    if (path === '/healthz') return json({ ok: true, version: 'v3.9-nodl' });
+    if (path === '/healthz') return json({ ok: true, version: 'v3.10-fx' });
 
     // 语言切换: ?lang=zh|en -> 写 Cookie 后跳回干净地址 (仅 GET)
     if (req.method === 'GET') {
