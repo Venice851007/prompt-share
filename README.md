@@ -1,5 +1,9 @@
 # Prompt Share
 
+<p align="center">
+  <img src="assets/logo.svg" width="96" alt="Prompt Share logo">
+</p>
+
 一个单文件 Cloudflare Worker 实现的「提示词 + 图片」分享小站。
 
 **样品站**: https://prompt.minispacex.com/
