@@ -1,125 +1,102 @@
-# Prompt Share — 提示词 + 图片分享小站 (v2 公开画廊版)
+# Prompt Share
 
-把"提示词 + 出图"打包成一个短链接,发到 X / 小红书 / 微信都行。
-首页是公开画廊: 访客不用登录就能逛精选和最新作品、搜标签;
-登录后才能上传, 分享出去的灵感可以一键复制提示词。
-技术栈: Cloudflare Workers + R2(图床) + KV(元数据) + Access(登录),
-全免费额度。
+一个单文件 Cloudflare Worker 实现的「提示词 + 图片」分享小站。
 
-## 角色与流程
+**样品站**: https://prompt.minispacex.com/
 
-- **管理员** (ADMIN_EMAILS 名单): 上传直接上架 (可设精选), 拿到分享链接;
-  在 `/admin` 审核普通用户的待审内容、管理精选。
-- **普通用户** (Access 名单里、非管理员): 上传后进**待审队列**,
-  管理员在 `/admin` 点"通过上架 / 通过并精选 / 驳回删除";
-  在 `/mine` 看自己的待审和已上架作品。
-- **访客**: 不用登录, 首页画廊随便逛 (`/` 精选+最新+标签云、
-  `/tag/:tag` 标签页、`/search` 搜索), 分享页 `/f/:id` 可看图、
-  一键复制提示词。
-
-不开放注册: 加人 = 管理员去 Access Policy 的邮箱名单里加一行。
-50 人上限是 Access 免费版的硬上限, 加满 51 个时 Cloudflare 会提示升级,
-程序里不用再限。
+把"提示词 + 出图"打包成一个短链接，发到 X / 小红书 / 微信都行。
+访客不用登录就能逛画廊、看图、一键复制提示词；站长登录后上传，支持审核制多人协作。
 
 ## 功能
 
-- `GET /` 公开画廊首页 (精选 + 最新分页 + 标签云 + 搜索框)
-- `GET /tag/:tag` 公开标签页
-- `GET /search?q=` 公开搜索 (标题/标签/提示词, 近 150 条内过滤)
-- `GET /f/:id` 分享详情页 (公开, 一键复制提示词)
-- `GET /img/:id` 图片代理 (公开, 不暴露 R2 直链)
-- `GET /upload` 上传页 (需 Access 登录, 显示当前身份; 管理员可设精选)
-- `GET /mine` 我的作品 (需登录: 待审 + 已上架)
-- `GET /admin` 审核 + 精选管理 (仅管理员)
-- `POST /api/upload` 上传 (管理员直发, 普通用户进待审)
-- `POST /api/review` 审核操作 approve/reject/unfeature (仅管理员)
+**访客（免登录）**
+- 首页公开画廊：精选大图轮播（每次打开随机排序）+ 瀑布流最新作品
+- 标签云、标签页、全文搜索（标题 / 标签 / 提示词）
+- 作品详情页：一键复制提示词，多图左右滑动查看（支持手机手势）
+- 最新区卡片：多图作品可直接在卡片上左右翻看
 
-**不做的**: 浏览/点赞统计、评论、关注 —— 50 人社区不需要,
-KV 免费写额度 (每天 1000 次) 也撑不起全量计数。
+**站长 / 管理员（Access 登录）**
+- 上传作品：标题、中英文提示词、标签，一次最多 8 张图
+- 管理员上传直接上架（可设精选），普通用户上传进待审队列
+- `/admin`：审核上架、精选管理、已发布作品随时设为精选 / 取消精选
+- `/mine`：管理自己的待审和已上架作品，支持编辑（换标题、改图、增删图片）
 
-## 防刷
+**不做的**：浏览 / 点赞统计、评论、关注 —— 小圈子不需要，KV 免费写额度也撑不起。
 
-1. **防盗链** — 图片经 Worker 代理, Referer 非本站 403
-   (空 Referer 放行: 直接打开、IM 内分享是正常行为)
-2. **签名 URL** — 分享页里的图片地址带 HMAC 签名, 6 小时过期
-3. **强缓存** — `Cache-Control: public, max-age=31536000, immutable`,
-   重复访问不回源、不消耗 R2 读取次数
-4. **限流** — 上传每 IP 每小时 20 次; 图片每 IP 每分钟 120 次
-5. **JWT 二次校验** — Worker 侧校验 `Cf-Access-Jwt-Assertion` 的签名/aud/过期,
-   绕过 Access 直接打 Worker 域名也进不来
+## 技术栈
 
-## 部署步骤
+- **Cloudflare Workers**：全部逻辑在一个 `src/worker.js`（单文件，无依赖）
+- **R2**：私有图床（图片经 Worker 代理，不暴露直链）
+- **KV**：元数据 + 索引（最新 / 用户 / 标签 / 精选）
+- **Cloudflare Access (Zero Trust)**：登录鉴权，50 用户内免费
+- **Workers Builds**：连 GitHub 仓库，push 到 main 自动部署
 
-### 1. 建 R2 bucket (图床)
+## 安全设计
 
-Dashboard → R2 → Create bucket, 名字 `prompt-share-imgs`。
-**不要**开公开访问 (保持私有)。
+1. **防盗链**：图片经 Worker 代理，Referer 非本站 403（空 Referer 放行：直接打开、IM 内分享是正常行为）
+2. **签名 URL**：图片地址带 HMAC 签名，6 小时过期
+3. **强缓存**：`Cache-Control: public, max-age=31536000, immutable`
+4. **限流**：上传每 IP 每小时 20 次；图片每 IP 每分钟 120 次
+5. **JWT 二次校验**：Worker 侧校验 `Cf-Access-Jwt-Assertion` 的签名 / aud / 过期，绕过 Access 直接打 Worker 域名也进不来
+6. **密钥不进仓库**：`SIGN_SECRET` 只放在 Dashboard Secrets 里
+
+## 自己部署一套
+
+### 1. 建 R2 bucket
+
+Dashboard → R2 → Create bucket，如 `prompt-share-imgs`。**不要**开公开访问（保持私有）。
 
 ### 2. 建 KV namespace
 
-Workers & Pages → KV → Create namespace, 如 `prompt-share`。
+Workers & Pages → KV → Create namespace，如 `prompt-share`。
 
 ### 3. Workers 连 GitHub 自动部署
 
-Workers & Pages → Create → Import a repository → 选 `prompt-share` 仓库 →
-Deploy。记下分配的 `*.workers.dev` 域名, 建议再绑自己的域名
-(Settings → Domains)。
+Workers & Pages → Create → Import a repository → 选本仓库 → Deploy。
+记下 `*.workers.dev` 域名，建议再绑自己的域名（Settings → Domains）。
 
 ### 4. 配绑定和变量
 
-Workers → prompt-share → Settings → Bindings → Add binding:
-- R2 bucket → Variable name `IMGS` → 选 `prompt-share-imgs`
-- KV namespace → Variable name `SHARE` → 选第 2 步建的 namespace
+Workers → Settings → Bindings：
+- R2 bucket → Variable name `IMGS` → 选第 1 步的 bucket
+- KV namespace → Variable name `SHARE` → 选第 2 步的 namespace
 
-Settings → Variables → Add variable:
-- **Secret** `SIGN_SECRET` = 随机字符串 (电脑跑 `openssl rand -hex 32`)
-- **Text** `ADMIN_EMAILS` = 你的邮箱 (多个逗号分隔)
+Settings → Variables：
+- **Secret** `SIGN_SECRET` = 随机字符串（`openssl rand -hex 32`）
+- **Text** `ADMIN_EMAILS` = 你的邮箱（多个逗号分隔）
 - **Text** `ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` = 第 5 步建好 Access 应用后回填
-
-改完点 Redeploy。
 
 ### 5. 配 Cloudflare Access (Zero Trust)
 
-Zero Trust Dashboard → Access → Applications:
+Zero Trust Dashboard → Access → Applications，建两个应用：
 
-**应用一 `prompt-share-public` (Bypass, 所有人)** —
-两个域名 (workers.dev 和自定义域名) 各加:
+**应用一 `prompt-share-public`（Bypass，所有人）**，两个域名各加：
 `/`、`/tag/*`、`/search*`、`/f/*`、`/img/*`
-(注意 `/` 是前缀匹配, 会覆盖全站; 登录区靠下面更具体的路径优先命中)
 
-**应用二 `prompt-share` (Allow, 邮箱白名单)** —
-两个域名各加: `/upload`、`/mine`、`/api/*`、`/admin/*`
-- Policy → Allow → Emails: 填管理员 + 普通用户的邮箱 (≤50 人免费)
-- 建好后把应用总览页的 **AUD** (一串 hex) 和你的 Team Domain
-  (如 `yourteam.cloudflareaccess.com`) 回填到第 4 步的变量, 再 Redeploy。
+**应用二 `prompt-share`（Allow，邮箱白名单）**，两个域名各加：
+`/upload`、`/mine`、`/api/*`、`/admin/*`
+- Policy → Allow → Emails：填管理员 + 普通用户邮箱（≤50 人免费）
+- 建好后把应用总览页的 **AUD** 和 Team Domain 回填到第 4 步，再 Redeploy
 
-加人/删人: 以后直接改这个 Policy 的邮箱名单, 即时生效, 不用动代码。
+加人/删人：以后直接改 Policy 的邮箱名单，即时生效，不用动代码。
 
 ### 6. 验证
 
-1. 浏览器无痕打开 https://prompt.minispacex.com/ → **不跳登录**,
-   直接看到画廊首页 (精选/最新/标签云)。
-2. 点"分享作品" → 跳 Access 登录。
-3. 管理员登录 → `/upload` 上传一张图 (标题+标签, 勾选精选) →
-   直接拿到 `/f/` 链接; 首页精选区出现这张。
-4. 点开 `/f/` 链接 → 无痕也能看, "一键复制"按钮可用。
-5. `/tag/人物`、`/search?q=人物` 有结果; `/mine` 能看到自己的作品。
-6. 换个普通用户邮箱登录 (先加进 Policy) → 上传 → 提示"已提交审核",
-   `/mine` 显示待审核; 管理员 `/admin` 点"通过并精选" → 上架。
+1. 无痕打开首页 → **不跳登录**，直接看到画廊
+2. 点"分享作品" → 跳 Access 登录
+3. 管理员上传一张图（勾选精选）→ 拿到 `/f/` 链接，首页精选区出现
+4. `/mine`、`/admin` 功能正常
 
-## Git 自动部署
+## 免费额度（2026 年）
 
+| 资源 | 免费额度 |
+|---|---|
+| R2 | 10GB 存储 / 月，100 万次写入，1000 万次读取，出站流量免费 |
+| KV | 1GB 存储，每天 10 万次读 / 1000 次写 |
+| Workers | 每天 10 万次请求 |
+| Access | 50 用户以内免费 |
 
-Worker `prompt-share` 已在 Cloudflare Dashboard (Workers & Pages → prompt-share → Settings → 构建) 连接本仓库; push 到 `main` 分支后, Workers Builds 会自动构建并上线, 构建命令留空、部署命令 `npx wrangler deploy`。
-
-## 免费额度 (2026 年)
-
-- R2: 每月 10GB 存储 + 100 万次写入 + 1000 万次读取, 出站流量免费
-- KV: 存 1GB, 每天 10 万次读 / 1000 次写
-- Workers: 每天 10 万次请求
-- Access: 50 用户以内免费
-
-## 本地开发 (可选)
+## 本地开发
 
 ```bash
 npx wrangler dev
@@ -130,7 +107,16 @@ npx wrangler secret put SIGN_SECRET
 ## 文件结构
 
 ```
-src/worker.js    全部逻辑 (单文件, 无依赖)
-wrangler.toml    wrangler 部署配置 (走 Dashboard 可忽略)
+src/worker.js    全部逻辑（单文件，无依赖）
+wrangler.toml    部署配置
 README.md        本文件
+CHANGELOG.md     更新日志
 ```
+
+## 更新日志
+
+见 [CHANGELOG.md](CHANGELOG.md)。
+
+## License
+
+[MIT](LICENSE) — 随便用，留个出处就行。
