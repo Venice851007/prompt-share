@@ -4,6 +4,10 @@
   <a href="CHANGELOG.zh-CN.md">中文</a> | <strong>English</strong>
 </p>
 
+## v3.10-fx (2026-09-30)
+
+- Image effects: hover to zoom on card thumbnails and detail carousel (smooth scale); click/tap plays a jelly jiggle animation (disabled under prefers-reduced-motion).
+
 ## v3.9-nodl (2026-09-30)
 
 - Anti-download: right-click "save image" disabled on all images, drag-out blocked, iOS long-press save callout disabled, images not selectable/draggable. Prompt one-click copy is unaffected.
