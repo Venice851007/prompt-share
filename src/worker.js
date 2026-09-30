@@ -320,13 +320,15 @@ function htmlPage(title, body, lang, desc) {
     '<meta name="viewport" content="width=device-width,initial-scale=1">' +
     '<meta name="description" content="' + escapeHtml(desc || t.tagline) + '">' +
     '<title>' + escapeHtml(title) + '</title>' +
+    '<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%20%20%3Crect%20x%3D%222%22%20y%3D%222%22%20width%3D%2260%22%20height%3D%2260%22%20rx%3D%2214%22%20fill%3D%22%23151a24%22%20stroke%3D%22%232c3342%22%20stroke-width%3D%222%22%2F%3E%20%20%3Crect%20x%3D%2215%22%20y%3D%2219%22%20width%3D%2234%22%20height%3D%2226%22%20rx%3D%226%22%20fill%3D%22none%22%20stroke%3D%22%237aa2ff%22%20stroke-width%3D%223.5%22%2F%3E%20%20%3Ccircle%20cx%3D%2224.5%22%20cy%3D%2227.5%22%20r%3D%223.4%22%20fill%3D%22%237aa2ff%22%2F%3E%20%20%3Cpath%20d%3D%22M17%2040%20L28%2030%20L35%2036.5%20L41%2031.5%20L47%2038%22%20fill%3D%22none%22%20stroke%3D%22%237aa2ff%22%20stroke-width%3D%223.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E">' +
     '<style>' +
     'body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;' +
     'background:#0f1115;color:#e8eaf0;margin:0;padding:0;line-height:1.6}' +
     '.wrap{max-width:1080px;margin:0 auto;padding:24px 20px 60px}' +
     'header.top{display:flex;align-items:center;justify-content:space-between;padding:18px 0;flex-wrap:wrap;gap:12px}' +
-    '.logo{font-size:22px;font-weight:700;color:#fff;text-decoration:none}' +
+    '.logo{font-size:22px;font-weight:700;color:#fff;text-decoration:none;display:inline-flex;align-items:center}' +
     '.logo span{color:#7aa2ff}' +
+    '.logo svg{width:26px;height:26px;margin-right:9px;flex:none}' +
     'nav a{color:#aab2c5;text-decoration:none;margin-left:18px;font-size:14px}' +
     'nav a:hover{color:#fff}' +
     'nav a.langbtn{border:1px solid #2c3342;border-radius:16px;padding:4px 12px;font-weight:600}' +
@@ -416,7 +418,7 @@ function htmlPage(title, body, lang, desc) {
     'footer{margin-top:60px;padding-top:20px;border-top:1px solid #1d222c;color:#5b6373;' +
     'font-size:12px;text-align:center}' +
     '</style></head><body><div class="wrap">' +
-    '<header class="top"><a class="logo" href="/">Prompt<span>Share</span></a>' +
+    '<header class="top"><a class="logo" href="/"><svg viewBox="0 0 64 64" aria-hidden="true"><rect x="2" y="2" width="60" height="60" rx="14" fill="#151a24" stroke="#2c3342" stroke-width="2"/><rect x="15" y="19" width="34" height="26" rx="6" fill="none" stroke="#7aa2ff" stroke-width="3.5"/><circle cx="24.5" cy="27.5" r="3.4" fill="#7aa2ff"/><path d="M17 40 L28 30 L35 36.5 L41 31.5 L47 38" fill="none" stroke="#7aa2ff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Prompt<span>Share</span></a>' +
     '<nav><a href="/">' + t.home + '</a><a href="/upload">' + t.upload + '</a>' +
     '<a href="/mine">' + t.mine + '</a><a href="/admin">' + t.admin + '</a>' +
     '<a class="langbtn" href="javascript:void(0)" onclick="setLang(\'' + other + '\')">' + otherLabel + '</a></nav></header>' +
@@ -1676,7 +1678,7 @@ export default {
       return new Response('服务端未配置 SIGN_SECRET', { status: 500 });
     }
 
-    if (path === '/healthz') return json({ ok: true, version: 'v3.5-cardswipe' });
+    if (path === '/healthz') return json({ ok: true, version: 'v3.6-logo' });
 
     // 语言切换: ?lang=zh|en -> 写 Cookie 后跳回干净地址 (仅 GET)
     if (req.method === 'GET') {
