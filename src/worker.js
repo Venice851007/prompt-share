@@ -669,6 +669,7 @@ async function sharePage(env, id, lang, isAdm) {
     '<p><a href="/upload"><button>' + t.shareCta2 + '</button></a>' +
     (isAdm ? ' <button class="danger" id="delbtn" onclick="delShare()">' + t.delShare + '</button>' : '') + '</p>' +
     '<script>' +
+    (isAdm ?
     'var SID=' + JSON.stringify(id) + ';' +
     'var DEL_TXT=' + JSON.stringify(t.delShare) + ';' +
     'var DEL_SURE=' + JSON.stringify(t.delSure) + ';' +
@@ -683,7 +684,8 @@ async function sharePage(env, id, lang, isAdm) {
     'fetch("/api/admin/delete",{method:"POST",headers:{"content-type":"application/json"},' +
     'body:JSON.stringify({id:SID})}).then(function(r){return r.json();})' +
     '.then(function(d){if(d.ok){alert(MSG_DEL);location.href="/";}else{alert(d.error||"fail");b.disabled=false;b.textContent=DEL_TXT;}})' +
-    '.catch(function(e){alert(String(e));b.disabled=false;b.textContent=DEL_TXT;});}' +
+    '.catch(function(e){alert(String(e));b.disabled=false;b.textContent=DEL_TXT;});}'
+    : '') +
     'var PT=' + JSON.stringify(prompt).replace(/<\//g, '<\\/') + ';' +
     'var MSG_OK=' + JSON.stringify(t.copiedPrompt) + ';' +
     'var MSG_FAIL=' + JSON.stringify(t.copyFail) + ';' +
@@ -1124,7 +1126,7 @@ export default {
       return new Response('服务端未配置 SIGN_SECRET', { status: 500 });
     }
 
-    if (path === '/healthz') return json({ ok: true, version: 'v3.1-del2' });
+    if (path === '/healthz') return json({ ok: true, version: 'v3.1-del3' });
 
     // 语言切换: ?lang=zh|en -> 写 Cookie 后跳回干净地址 (仅 GET)
     if (req.method === 'GET') {
