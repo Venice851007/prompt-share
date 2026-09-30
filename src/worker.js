@@ -1,5 +1,5 @@
-// prompt-share Worker v3.2 (双语版 + 管理员删除 + 编辑)
-// v3.2 新增: 作者/管理员可编辑作品 (标题/中英提示词/标签/可选换图), GET /edit/:id, POST /api/edit
+// prompt-share Worker v3.3 (双语版 + 管理员删除 + 编辑 + 多图)
+// v3.3 新增: 一个提示词可配多张图 (上传多选/编辑加图/勾选删一张或多张), GET /img/:id/:seq
 // 中 / EN 一键切换: 界面全双语, 提示词支持中英双版本 (上传时可各填一版, 切换时跟着切)
 // 语言判定: Cookie lang > Accept-Language > 默认中文; 右上角切换键写 Cookie 后刷新
 //
@@ -17,7 +17,7 @@
 //   GET  /tag/:tag      公开标签页
 //   GET  /search?q=     公开搜索 (标题/标签/中英提示词子串, 近 150 条内过滤)
 //   GET  /f/:id         分享详情页 (公开, 一键复制当前语言提示词)
-//   GET  /img/:id       图片代理 (公开, 签名+防盗链+缓存+限流)
+//   GET  /img/:id[/:seq] 图片代理 (公开, 签名+防盗链+缓存+限流; seq 为多图序号, 缺省=封面)
 //   GET  /upload        上传页 (需 Access 登录; 管理员直发, 普通用户进待审)
 //   GET  /mine          我的作品 (需登录)
 //   GET  /edit/:id      编辑页 (需登录; 仅作者或管理员)
@@ -46,6 +46,7 @@
 
 var ID_LEN = 10;
 var MAX_IMG_BYTES = 10 * 1024 * 1024;
+var MAX_IMGS = 8;
 var SIG_TTL_SEC = 6 * 3600;
 var UPLOAD_LIMIT_PER_HOUR = 20;
 var IMG_LIMIT_PER_MIN = 120;
@@ -212,6 +213,9 @@ zh: {
   edit: '✏️ 编辑', editTitle: '编辑作品', save: '💾 保存修改', backToShare: '← 返回作品页',
   curImg: '当前图片', keepImg: '换图（不换请留空）', saved: '已保存',
   eNotOwner: '只有作者或管理员能编辑',
+  imgsLabel: '图片（可多选，最多 8 张）', curImgs: '当前图片（勾选要删除的）',
+  addImgs: '继续加图（可多选）', imgsLeft: '还能再加 {n} 张',
+  eImgCount: '一张分享最多放 8 张图片', eKeepOne: '至少保留一张图片', delOne: '删除',
   noPendingAdmin: '🎉 没有待审核的内容', adminOnly: '只有管理员能看',
   eLogin: '未登录, 请从正常入口访问', eFreq: '上传太频繁,请一小时后再试',
   eForm: '请用 multipart 表单上传', eNoFile: '没收到图片文件',
@@ -278,6 +282,9 @@ en: {
   edit: '✏️ Edit', editTitle: 'Edit share', save: '💾 Save changes', backToShare: '← Back to share',
   curImg: 'Current image', keepImg: 'Replace image (leave empty to keep current)', saved: 'Saved',
   eNotOwner: 'Only the author or admin can edit',
+  imgsLabel: 'Images (select multiple, up to 8)', curImgs: 'Current images (check to delete)',
+  addImgs: 'Add more images (multiple ok)', imgsLeft: 'You can add {n} more',
+  eImgCount: 'A share can have at most 8 images', eKeepOne: 'Keep at least one image', delOne: 'Delete',
   noPendingAdmin: '🎉 Nothing pending review', adminOnly: 'Admins only',
   eLogin: 'Not signed in — please enter via the normal flow', eFreq: 'Too many uploads — try again in an hour',
   eForm: 'Please upload via multipart form', eNoFile: 'No image file received',
@@ -509,10 +516,22 @@ async function listByIndex(env, prefix, page) {
   return { items: metas.filter(Boolean), page: page, hasMore: !complete && total >= need };
 }
 
-async function signedImgUrl(env, id) {
+/* 图片列表: [{seq,ct,size}]; seq '' 为封面(对应 R2 key 'img:<id>'), 其余为 'img:<id>:<seq>'.
+   老数据没有 images 数组时, 视为只有一张封面图, 保持兼容. */
+function imgList(meta) {
+  if (meta && meta.images && meta.images.length) return meta.images;
+  return [{ seq: '', ct: (meta && meta.contentType) || 'image/jpeg', size: (meta && meta.size) || 0 }];
+}
+function imgR2Key(id, seq) {
+  return seq ? 'img:' + id + ':' + seq : 'img:' + id;
+}
+
+async function signedImgUrl(env, id, seq) {
+  seq = seq || '';
   var exp = Math.floor(Date.now() / 1000) + SIG_TTL_SEC;
-  var sig = await hmacSign(env.SIGN_SECRET, id + '.' + exp);
-  return '/img/' + id + '?exp=' + exp + '&sig=' + encodeURIComponent(sig);
+  var base = seq ? id + '.' + seq : id;
+  var sig = await hmacSign(env.SIGN_SECRET, base + '.' + exp);
+  return '/img/' + id + (seq ? '/' + seq : '') + '?exp=' + exp + '&sig=' + encodeURIComponent(sig);
 }
 
 function cardHtml(imgUrl, meta, lang) {
@@ -648,7 +667,25 @@ async function sharePage(env, id, lang, email, isAdm) {
       '<div class="empty"><h2>' + t.notFound + '</h2><p><a href="/">' + t.backHomeLink + '</a></p></div>', lang);
   }
   var meta = JSON.parse(raw);
-  var imgUrl = await signedImgUrl(env, id);
+  var imgs = imgList(meta);
+  var imgUrl = await signedImgUrl(env, id, imgs[0].seq);
+  var thumbStrip = '';
+  if (imgs.length > 1) {
+    var ths = [];
+    for (var hi = 0; hi < imgs.length; hi++) {
+      var hurl = await signedImgUrl(env, id, imgs[hi].seq);
+      ths.push('<img src="' + hurl + '" data-full="' + hurl + '" onclick="swapImg(this)"' +
+        ' style="width:72px;height:72px;object-fit:cover;border-radius:8px;cursor:pointer' +
+        (hi === 0 ? ';outline:2px solid #4f8cff' : '') + '">');
+    }
+    thumbStrip = '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">' + ths.join('') + '</div>' +
+      '<script>function swapImg(el){' +
+      'document.getElementById("mainimg").src=el.getAttribute("data-full");' +
+      'var all=el.parentNode.querySelectorAll("img");' +
+      'for(var i=0;i<all.length;i++)all[i].style.outline="";' +
+      'el.style.outline="2px solid #4f8cff";' +
+      '}</script>';
+  }
   var title = meta.title || t.untitled;
   var prompt = promptFor(meta, lang);
   var canEd = isAdm || canEdit(env, email, meta);
@@ -670,7 +707,7 @@ async function sharePage(env, id, lang, email, isAdm) {
     '<p><span class="badge">' + escapeHtml(meta.author || meta.owner || '?') + '</span>' +
     '<span class="hint">' + fmtDate(meta.createdAt, lang) + ' ' + t.sharedBy + '</span></p>' +
     (tags ? '<p>' + tags + '</p>' : '') +
-    '<div class="card"><img class="full" src="' + imgUrl + '" alt="分享图片"></div>' +
+    '<div class="card"><img id="mainimg" class="full" src="' + imgUrl + '" alt="分享图片">' + thumbStrip + '</div>' +
     '<div class="card"><div class="hint">' + t.promptLabel + ' ' +
     '<button style="padding:4px 14px;font-size:13px" onclick="copyP()">' + t.copyPrompt + '</button>' + otherLink + '</div>' +
     '<pre id="p">' + escapeHtml(prompt) + '</pre>' +
@@ -713,7 +750,7 @@ async function sharePage(env, id, lang, email, isAdm) {
 
 /* ---------- 公开: 图片代理 (签名+防盗链+缓存+限流) ---------- */
 
-async function serveImage(env, req, id, url, lang) {
+async function serveImage(env, req, id, seq, url, lang) {
   var t = STR[lang];
   var u = new URL(url);
   var exp = parseInt(u.searchParams.get('exp') || '0', 10);
@@ -721,7 +758,9 @@ async function serveImage(env, req, id, url, lang) {
   if (!exp || exp < Math.floor(Date.now() / 1000)) {
     return new Response(t.imgExpired, { status: 403 });
   }
-  var expect = await hmacSign(env.SIGN_SECRET, id + '.' + exp);
+  seq = seq || '';
+  var base = seq ? id + '.' + seq : id;
+  var expect = await hmacSign(env.SIGN_SECRET, base + '.' + exp);
   if (!timingSafeEqual(sig, expect)) {
     return new Response(t.imgBadSig, { status: 403 });
   }
@@ -737,7 +776,7 @@ async function serveImage(env, req, id, url, lang) {
     return new Response(t.imgFreq, { status: 429 });
   }
 
-  var obj = await env.IMGS.get('img:' + id);
+  var obj = await env.IMGS.get(imgR2Key(id, seq));
   if (!obj) return new Response(t.img404, { status: 404 });
 
   var headers = new Headers();
@@ -768,8 +807,8 @@ function uploadPage(email, admin, lang) {
     '<p class="hint">' + t.promptHint + '</p>' +
     '<label class="hint">' + t.tagsLabel + '</label>' +
     '<input id="tags" maxlength="120" placeholder="' + escapeHtml(t.tagsPh) + '">' +
-    '<label class="hint">' + t.imgLabel + '</label>' +
-    '<input id="file" type="file" accept="image/*">' +
+    '<label class="hint">' + t.imgsLabel + '</label>' +
+    '<input id="file" type="file" accept="image/*" multiple>' +
     (admin ? '<p><label class="hint"><input id="featured" type="checkbox" style="width:auto"> ' + t.featuredLabel + '</label></p>' : '') +
     '<p><button id="btn" onclick="go()">' + t.submit + '</button></p>' +
     '<p id="msg" class="hint"></p><div id="out"></div></div>' +
@@ -777,6 +816,7 @@ function uploadPage(email, admin, lang) {
     'var E_NOIMG=' + JSON.stringify(t.errNoImg) + ';' +
     'var E_NOPROMPT=' + JSON.stringify(t.errNoPrompt) + ';' +
     'var E_UPLOAD=' + JSON.stringify(t.errUpload) + ';' +
+    'var E_IMGCOUNT=' + JSON.stringify(t.eImgCount) + ';' +
     'var T_UPLOADING=' + JSON.stringify(t.uploading) + ';' +
     'var T_OKP=' + JSON.stringify(t.okPending) + ';' +
     'var T_OKL=' + JSON.stringify(t.okLive) + ';' +
@@ -784,14 +824,17 @@ function uploadPage(email, admin, lang) {
     'var T_COPYL=' + JSON.stringify(t.copyLink) + ';' +
     'var T_COPIED=' + JSON.stringify(t.copied) + ';' +
     'async function go(){' +
-    'var f=document.getElementById("file").files[0];' +
+    'var fs=document.getElementById("file").files;' +
     'var pz=document.getElementById("pzh").value.trim();' +
     'var pe=document.getElementById("pen").value.trim();' +
     'var msg=document.getElementById("msg"),out=document.getElementById("out");' +
-    'if(!f){msg.innerHTML="<span class=err>"+E_NOIMG+"</span>";return;}' +
+    'if(!fs.length){msg.innerHTML="<span class=err>"+E_NOIMG+"</span>";return;}' +
+    'if(fs.length>8){msg.innerHTML="<span class=err>"+E_IMGCOUNT+"</span>";return;}' +
     'if(!pz&&!pe){msg.innerHTML="<span class=err>"+E_NOPROMPT+"</span>";return;}' +
     'msg.textContent=T_UPLOADING;out.innerHTML="";' +
-    'var fd=new FormData();fd.append("image",f);fd.append("prompt_zh",pz);fd.append("prompt_en",pe);' +
+    'var fd=new FormData();' +
+    'for(var i=0;i<fs.length;i++)fd.append("images",fs[i]);' +
+    'fd.append("prompt_zh",pz);fd.append("prompt_en",pe);' +
     'fd.append("title",document.getElementById("title").value.trim());' +
     'fd.append("tags",document.getElementById("tags").value.trim());' +
     'var fc=document.getElementById("featured");if(fc&&fc.checked)fd.append("featured","1");' +
@@ -816,7 +859,7 @@ function canEdit(env, email, meta) {
   return String(meta.owner || '').toLowerCase() === String(email).toLowerCase();
 }
 
-/* 编辑页: 标题/中英提示词/标签可改, 图片可选替换 (作者或管理员) */
+/* 编辑页: 标题/中英提示词/标签可改, 图片可加可删 (作者或管理员) */
 async function editPage(env, id, email, lang) {
   var t = STR[lang];
   var raw = await env.SHARE.get('s:' + id);
@@ -826,12 +869,19 @@ async function editPage(env, id, email, lang) {
   }
   var meta = JSON.parse(raw);
   if (!canEdit(env, email, meta)) return new Response(t.eNotOwner, { status: 403 });
-  var imgUrl = await signedImgUrl(env, id);
+  var imgs = imgList(meta);
+  var thumbs = '';
+  for (var ti = 0; ti < imgs.length; ti++) {
+    var turl = await signedImgUrl(env, id, imgs[ti].seq);
+    thumbs += '<label style="display:inline-block;text-align:center;margin:0 10px 10px 0;cursor:pointer">' +
+      '<img src="' + turl + '" style="width:120px;height:120px;object-fit:cover;border-radius:8px;display:block">' +
+      '<span class="hint"><input type="checkbox" class="delcb" value="' + escapeHtml(imgs[ti].seq) + '" style="width:auto"> ' + t.delOne + '</span></label>';
+  }
+  var canAdd = MAX_IMGS - imgs.length;
   return htmlPage(t.editTitle + ' - PromptShare',
     '<p class="hint"><a href="/f/' + escapeHtml(id) + '">' + t.backToShare + '</a></p>' +
     '<h2>' + t.editTitle + '</h2>' +
-    '<div class="card"><p class="hint">' + t.curImg + '</p>' +
-    '<img class="full" src="' + imgUrl + '" style="max-height:320px;width:auto"></div>' +
+    '<div class="card"><p class="hint">' + t.curImgs + '</p>' + thumbs + '</div>' +
     '<div class="card">' +
     '<label class="hint">' + t.titleLabel + '</label>' +
     '<input id="title" maxlength="80" value="' + escapeHtml(meta.title || '') + '">' +
@@ -842,14 +892,16 @@ async function editPage(env, id, email, lang) {
     '<p class="hint">' + t.promptHint + '</p>' +
     '<label class="hint">' + t.tagsLabel + '</label>' +
     '<input id="tags" maxlength="120" value="' + escapeHtml((meta.tags || []).join(' ')) + '">' +
-    '<label class="hint">' + t.keepImg + '</label>' +
-    '<input id="file" type="file" accept="image/*">' +
+    '<label class="hint">' + t.addImgs + '</label>' +
+    '<input id="file" type="file" accept="image/*" multiple>' +
+    '<p class="hint">' + t.imgsLeft.replace('{n}', canAdd) + '</p>' +
     '<p><button id="btn" onclick="go()">' + t.save + '</button></p>' +
     '<p id="msg" class="hint"></p></div>' +
     '<script>' +
     'var SID=' + JSON.stringify(id) + ';' +
     'var E_NOPROMPT=' + JSON.stringify(t.errNoPrompt) + ';' +
     'var E_UPLOAD=' + JSON.stringify(t.errUpload) + ';' +
+    'var E_IMGCOUNT=' + JSON.stringify(t.eImgCount) + ';' +
     'var T_UPLOADING=' + JSON.stringify(t.uploading) + ';' +
     'var T_SAVED=' + JSON.stringify(t.saved) + ';' +
     'async function go(){' +
@@ -857,9 +909,15 @@ async function editPage(env, id, email, lang) {
     'var pe=document.getElementById("pen").value.trim();' +
     'var msg=document.getElementById("msg");' +
     'if(!pz&&!pe){msg.innerHTML="<span class=err>"+E_NOPROMPT+"</span>";return;}' +
+    'var fs=document.getElementById("file").files;' +
+    'var cbs=document.querySelectorAll(".delcb");' +
+    'var del=[];for(var i=0;i<cbs.length;i++)if(cbs[i].checked)del.push(cbs[i].value);' +
+    'var keep=cbs.length-del.length;' +
+    'if(keep+fs.length>8){msg.innerHTML="<span class=err>"+E_IMGCOUNT+"</span>";return;}' +
     'msg.textContent=T_UPLOADING;' +
     'var fd=new FormData();fd.append("id",SID);' +
-    'var f=document.getElementById("file").files[0];if(f)fd.append("image",f);' +
+    'if(del.length)fd.append("delSeqs",del.join(","));' +
+    'for(var j=0;j<fs.length;j++)fd.append("images",fs[j]);' +
     'fd.append("prompt_zh",pz);fd.append("prompt_en",pe);' +
     'fd.append("title",document.getElementById("title").value.trim());' +
     'fd.append("tags",document.getElementById("tags").value.trim());' +
@@ -1029,7 +1087,19 @@ async function apiUpload(env, req, url, lang) {
   try { form = await req.formData(); }
   catch (e) { return json({ ok: false, error: t.eForm }, 400); }
 
-  var file = form.get('image');
+  // 多图: 优先取 'images' (多选), 兼容老客户端单 'image' 字段
+  var files = [];
+  try {
+    var all = form.getAll('images');
+    for (var fi = 0; fi < all.length; fi++) {
+      var af = all[fi];
+      if (af && typeof af.arrayBuffer === 'function' && af.size > 0) files.push(af);
+    }
+  } catch (e) {}
+  var single = form.get('image');
+  if (!files.length && single && typeof single.arrayBuffer === 'function' && single.size > 0) {
+    files.push(single);
+  }
   // prompt_zh / prompt_en 双字段; 兼容老客户端的 prompt 单字段
   var pzh = String(form.get('prompt_zh') || form.get('prompt') || '').trim().slice(0, 20000);
   var pen = String(form.get('prompt_en') || '').trim().slice(0, 20000);
@@ -1037,26 +1107,39 @@ async function apiUpload(env, req, url, lang) {
   var tags = sanitizeTags(form.get('tags'));
   var wantFeatured = String(form.get('featured') || '') === '1';
 
-  if (!file || typeof file.arrayBuffer !== 'function') {
+  if (!files.length) {
     return json({ ok: false, error: t.eNoFile }, 400);
   }
+  if (files.length > MAX_IMGS) return json({ ok: false, error: t.eImgCount }, 400);
   if (!pzh && !pen) return json({ ok: false, error: t.eNoPrompt }, 400);
-  if (file.size > MAX_IMG_BYTES) return json({ ok: false, error: t.eBig }, 413);
-  if (!/^image\//.test(file.type || '')) return json({ ok: false, error: t.eImgOnly }, 400);
+  for (var vi = 0; vi < files.length; vi++) {
+    if (files[vi].size > MAX_IMG_BYTES) return json({ ok: false, error: t.eBig }, 413);
+    if (!/^image\//.test(files[vi].type || '')) return json({ ok: false, error: t.eImgOnly }, 400);
+  }
 
   var admin = isAdmin(env, email);
   var id = newId();
-  var buf = await file.arrayBuffer();
-  await env.IMGS.put('img:' + id, buf, {
-    httpMetadata: { contentType: file.type || 'image/jpeg' }
-  });
+  // 第 0 张为封面, 存 'img:<id>'; 其余存 'img:<id>:<seq>'
+  var images = [];
+  var puts = [];
+  for (var pi = 0; pi < files.length; pi++) {
+    (function (f, n) {
+      puts.push(f.arrayBuffer().then(function (buf) {
+        var key = n === 0 ? 'img:' + id : 'img:' + id + ':' + (n - 1);
+        images[n] = { seq: n === 0 ? '' : String(n - 1), ct: f.type || 'image/jpeg', size: f.size };
+        return env.IMGS.put(key, buf, { httpMetadata: { contentType: f.type || 'image/jpeg' } });
+      }));
+    })(files[pi], pi);
+  }
+  await Promise.all(puts);
 
   var meta = {
     id: id, title: title,
     prompt: pzh || pen, prompt_zh: pzh, prompt_en: pen,
     tags: tags,
-    contentType: file.type || 'image/jpeg',
-    size: file.size, owner: email, author: email.split('@')[0],
+    images: images, imgSeq: files.length - 1,
+    contentType: images[0].ct, size: images[0].size,
+    owner: email, author: email.split('@')[0],
     featured: admin && wantFeatured, createdAt: Date.now()
   };
 
@@ -1070,7 +1153,39 @@ async function apiUpload(env, req, url, lang) {
   return json({ ok: true, pending: true, msg: 'pending review' });
 }
 
-/* ---------- API: 编辑作品 (作者或管理员; createdAt 不变, 换图则覆盖 R2) ---------- */
+/* 纯函数: 根据当前图片 seq 列表 / 删除列表 / 新增数量, 算出图片变更计划 (可单元测试)
+   返回 {error} 或 {del, keep, delCover, promoteSeq, addedSeqs, finalSeqs, nextImgSeq}。
+   约定: 封面 seq 为 '', 对应 R2 key 'img:<id>'; 其余为 'img:<id>:<seq>'。 */
+function planImages(curSeqs, delSeqs, newCount, imgSeqMeta) {
+  var del = (delSeqs || []).filter(function (s) { return curSeqs.indexOf(s) !== -1; });
+  del = del.filter(function (s, i) { return del.indexOf(s) === i; });
+  var keep = curSeqs.filter(function (s) { return del.indexOf(s) === -1; });
+  if (!keep.length) return { error: 'keepOne' };
+  if (keep.length + newCount > MAX_IMGS) return { error: 'tooMany' };
+  var delCover = del.indexOf('') !== -1;
+  var promoteSeq = delCover ? keep[0] : null;
+  var imgSeq = imgSeqMeta || 0;
+  if (!imgSeqMeta) {
+    for (var q = 0; q < curSeqs.length; q++) {
+      var qn = parseInt(curSeqs[q], 10);
+      if (!isNaN(qn) && qn >= imgSeq) imgSeq = qn + 1;
+    }
+  }
+  var addedSeqs = [];
+  for (var i = 0; i < newCount; i++) addedSeqs.push(String(imgSeq++));
+  // 最终顺序: 封面位('') + 其余保留(原顺序, 被提上来的除外) + 新增
+  var finalSeqs = [''];
+  for (var k = 0; k < keep.length; k++) {
+    if (keep[k] === '') continue;
+    if (delCover && keep[k] === promoteSeq) continue;
+    finalSeqs.push(keep[k]);
+  }
+  for (var a = 0; a < addedSeqs.length; a++) finalSeqs.push(addedSeqs[a]);
+  return { error: null, del: del, keep: keep, delCover: delCover, promoteSeq: promoteSeq,
+           addedSeqs: addedSeqs, finalSeqs: finalSeqs, nextImgSeq: imgSeq };
+}
+
+/* ---------- API: 编辑作品 (作者或管理员; createdAt 不变, 图片可加可删) ---------- */
 
 async function apiEdit(env, req, url, lang) {
   var t = STR[lang];
@@ -1094,18 +1209,83 @@ async function apiEdit(env, req, url, lang) {
   var tags = sanitizeTags(form.get('tags'));
   if (!pzh && !pen) return json({ ok: false, error: t.eNoPrompt }, 400);
 
-  var file = form.get('image');
-  var jobs = [];
-  if (file && typeof file.arrayBuffer === 'function' && file.size > 0) {
-    if (file.size > MAX_IMG_BYTES) return json({ ok: false, error: t.eBig }, 413);
-    if (!/^image\//.test(file.type || '')) return json({ ok: false, error: t.eImgOnly }, 400);
-    var buf = await file.arrayBuffer();
-    jobs.push(env.IMGS.put('img:' + id, buf, {
-      httpMetadata: { contentType: file.type || 'image/jpeg' }
-    }));
-    meta.contentType = file.type || 'image/jpeg';
-    meta.size = file.size;
+  // ---- 图片: 加图 / 删一张或多张 (至少保留 1 张, 最多 MAX_IMGS 张) ----
+  var cur = imgList(meta);
+  var curSeqs = cur.map(function (x) { return x.seq; });
+  var delSeqs = String(form.get('delSeqs') || '').split(',')
+    .map(function (s) { return s.trim(); });
+
+  var newFiles = [];
+  try {
+    var nfAll = form.getAll('images');
+    for (var nfi = 0; nfi < nfAll.length; nfi++) {
+      var nf = nfAll[nfi];
+      if (nf && typeof nf.arrayBuffer === 'function' && nf.size > 0) newFiles.push(nf);
+    }
+  } catch (e) {}
+  var nsingle = form.get('image');
+  if (!newFiles.length && nsingle && typeof nsingle.arrayBuffer === 'function' && nsingle.size > 0) {
+    newFiles.push(nsingle);
   }
+  for (var nvi = 0; nvi < newFiles.length; nvi++) {
+    if (newFiles[nvi].size > MAX_IMG_BYTES) return json({ ok: false, error: t.eBig }, 413);
+    if (!/^image\//.test(newFiles[nvi].type || '')) return json({ ok: false, error: t.eImgOnly }, 400);
+  }
+
+  var plan = planImages(curSeqs, delSeqs, newFiles.length, meta.imgSeq);
+  if (plan.error === 'keepOne') return json({ ok: false, error: t.eKeepOne }, 400);
+  if (plan.error === 'tooMany') return json({ ok: false, error: t.eImgCount }, 400);
+
+  var bySeq = {};
+  for (var bsi = 0; bsi < cur.length; bsi++) bySeq[cur[bsi].seq] = cur[bsi];
+  var jobs = [];
+  var coverEntry = null;
+  if (plan.delCover) {
+    // 删封面: 把保留中的第一张提上来 (R2 复制到 'img:<id>', 封面 key 恒为 img:<id>)
+    var pold = bySeq[plan.promoteSeq];
+    var pobj = await env.IMGS.get(imgR2Key(id, plan.promoteSeq));
+    if (pobj) {
+      var pbuf = await pobj.arrayBuffer();
+      var pct = (pold && pold.ct) || 'image/jpeg';
+      try { pct = pobj.httpMetadata.contentType || pct; } catch (e2) {}
+      jobs.push(env.IMGS.put('img:' + id, pbuf, { httpMetadata: { contentType: pct } }));
+      jobs.push(env.IMGS.delete(imgR2Key(id, plan.promoteSeq)));
+      coverEntry = { seq: '', ct: pct, size: pbuf.byteLength };
+    } else {
+      // R2 里找不到候选图 (数据不一致的极端情况): 取消删除封面, 保留原封面
+      plan = planImages(curSeqs, delSeqs.filter(function (s) { return s !== ''; }), newFiles.length, meta.imgSeq);
+    }
+  }
+  for (var di = 0; di < plan.del.length; di++) {
+    var ds = plan.del[di];
+    if (ds === '') continue; // 封面已在上面处理 (复制覆盖, 无需删除 'img:<id>')
+    jobs.push(env.IMGS.delete(imgR2Key(id, ds)));
+  }
+  var added = [];
+  for (var ai = 0; ai < newFiles.length; ai++) {
+    var afile = newFiles[ai];
+    var aseq = plan.addedSeqs[ai];
+    var abuf = await afile.arrayBuffer();
+    jobs.push(env.IMGS.put(imgR2Key(id, aseq), abuf, {
+      httpMetadata: { contentType: afile.type || 'image/jpeg' }
+    }));
+    added.push({ seq: aseq, ct: afile.type || 'image/jpeg', size: afile.size });
+  }
+
+  // 重建 images 数组: 按 plan.finalSeqs 顺序组装 (封面/保留/新增)
+  var addedBySeq = {};
+  for (var abI = 0; abI < added.length; abI++) addedBySeq[added[abI].seq] = added[abI];
+  var newImages = [];
+  for (var fsi = 0; fsi < plan.finalSeqs.length; fsi++) {
+    var fs = plan.finalSeqs[fsi];
+    if (fs === '' && coverEntry) { newImages.push(coverEntry); continue; }
+    if (addedBySeq[fs]) { newImages.push(addedBySeq[fs]); continue; }
+    if (bySeq[fs]) newImages.push(bySeq[fs]);
+  }
+  meta.images = newImages;
+  meta.imgSeq = plan.nextImgSeq;
+  meta.contentType = newImages[0].ct;
+  meta.size = newImages[0].size;
 
   // 标签索引: createdAt 不变, inv 可直接复算; 只删减/新增差异部分
   var inv = invTs(meta.createdAt);
@@ -1220,7 +1400,15 @@ async function apiDelete(env, req, lang) {
     await env.SHARE.delete('s:' + id);
     await env.SHARE.delete('pending:' + id);
   }
-  try { await env.IMGS.delete('img:' + id); } catch (e) {}
+  // R2: 删掉该分享的全部图片 (封面 + 多图); 老数据兜底删 'img:<id>'
+  try {
+    var delImgs = meta ? imgList(meta) : [{ seq: '' }];
+    var r2jobs = [];
+    for (var ri = 0; ri < delImgs.length; ri++) {
+      r2jobs.push(env.IMGS.delete(imgR2Key(id, delImgs[ri].seq)));
+    }
+    await Promise.all(r2jobs);
+  } catch (e) {}
   return json({ ok: true });
 }
 
@@ -1270,7 +1458,7 @@ export default {
       return new Response('服务端未配置 SIGN_SECRET', { status: 500 });
     }
 
-    if (path === '/healthz') return json({ ok: true, version: 'v3.2-edit' });
+    if (path === '/healthz') return json({ ok: true, version: 'v3.3-multiimg' });
 
     // 语言切换: ?lang=zh|en -> 写 Cookie 后跳回干净地址 (仅 GET)
     if (req.method === 'GET') {
@@ -1301,8 +1489,8 @@ export default {
       var emF = await accessEmail(req, env);
       return sharePage(env, mF[1], lang, emF, isAdmin(env, emF));
     }
-    var mI = path.match(/^\/img\/([A-Za-z0-9]{10})$/);
-    if (mI && req.method === 'GET') return serveImage(env, req, mI[1], url, lang);
+    var mI = path.match(/^\/img\/([A-Za-z0-9]{10})(?:\/([A-Za-z0-9]+))?$/);
+    if (mI && req.method === 'GET') return serveImage(env, req, mI[1], mI[2] || '', url, lang);
 
     // ---- 登录区 (Access 保护 + Worker 侧二次校验 JWT) ----
     if (path === '/upload' && req.method === 'GET') {
