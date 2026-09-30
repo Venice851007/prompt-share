@@ -1,5 +1,5 @@
-// prompt-share Worker v3.1 (双语版 + 管理员删除)
-// v3.1 新增: 管理员可在作品详情页删除作品 (仅管理员可见按钮, 接口双重校验; 两步点击确认, 无原生弹窗)
+// prompt-share Worker v3.2 (双语版 + 管理员删除 + 编辑)
+// v3.2 新增: 作者/管理员可编辑作品 (标题/中英提示词/标签/可选换图), GET /edit/:id, POST /api/edit
 // 中 / EN 一键切换: 界面全双语, 提示词支持中英双版本 (上传时可各填一版, 切换时跟着切)
 // 语言判定: Cookie lang > Accept-Language > 默认中文; 右上角切换键写 Cookie 后刷新
 //
@@ -20,8 +20,10 @@
 //   GET  /img/:id       图片代理 (公开, 签名+防盗链+缓存+限流)
 //   GET  /upload        上传页 (需 Access 登录; 管理员直发, 普通用户进待审)
 //   GET  /mine          我的作品 (需登录)
+//   GET  /edit/:id      编辑页 (需登录; 仅作者或管理员)
 //   GET  /admin         审核 + 精选管理 (仅管理员)
 //   POST /api/upload    上传 (需登录; prompt_zh / prompt_en 双字段)
+//   POST /api/edit      更新作品: 标题/中英提示词/标签/可选换图 (作者或管理员; 标签索引差异更新, createdAt 不变)
 //   POST /api/review    审核操作 approve/reject/unfeature (仅管理员)
 //   POST /api/admin/delete   删除作品 KV + R2 图片 + 全部索引 (仅管理员, 幂等)
 //   POST /api/admin/reindex  给 v1 老数据补索引 (仅管理员, 幂等; GET 亦可, 供自动化兜底)
@@ -207,6 +209,9 @@ zh: {
   cfApproveFeat: '通过并设为精选?', cfApprove: '通过上架?',
   cfUnfeature: '取消精选?', cfReject: '驳回并删除?',
   delShare: '🗑 删除作品', delSure: '⚠️ 确认删除？不可恢复', deletedMsg: '已删除',
+  edit: '✏️ 编辑', editTitle: '编辑作品', save: '💾 保存修改', backToShare: '← 返回作品页',
+  curImg: '当前图片', keepImg: '换图（不换请留空）', saved: '已保存',
+  eNotOwner: '只有作者或管理员能编辑',
   noPendingAdmin: '🎉 没有待审核的内容', adminOnly: '只有管理员能看',
   eLogin: '未登录, 请从正常入口访问', eFreq: '上传太频繁,请一小时后再试',
   eForm: '请用 multipart 表单上传', eNoFile: '没收到图片文件',
@@ -270,6 +275,9 @@ en: {
   cfApproveFeat: 'Approve and feature?', cfApprove: 'Approve?',
   cfUnfeature: 'Unfeature?', cfReject: 'Reject and delete?',
   delShare: '🗑 Delete share', delSure: '⚠️ Confirm delete? Cannot be undone', deletedMsg: 'Deleted',
+  edit: '✏️ Edit', editTitle: 'Edit share', save: '💾 Save changes', backToShare: '← Back to share',
+  curImg: 'Current image', keepImg: 'Replace image (leave empty to keep current)', saved: 'Saved',
+  eNotOwner: 'Only the author or admin can edit',
   noPendingAdmin: '🎉 Nothing pending review', adminOnly: 'Admins only',
   eLogin: 'Not signed in — please enter via the normal flow', eFreq: 'Too many uploads — try again in an hour',
   eForm: 'Please upload via multipart form', eNoFile: 'No image file received',
@@ -632,7 +640,7 @@ async function searchPage(env, url, lang) {
 
 /* ---------- 公开: 分享详情 ---------- */
 
-async function sharePage(env, id, lang, isAdm) {
+async function sharePage(env, id, lang, email, isAdm) {
   var t = STR[lang];
   var raw = await env.SHARE.get('s:' + id);
   if (!raw) {
@@ -643,6 +651,7 @@ async function sharePage(env, id, lang, isAdm) {
   var imgUrl = await signedImgUrl(env, id);
   var title = meta.title || t.untitled;
   var prompt = promptFor(meta, lang);
+  var canEd = isAdm || canEdit(env, email, meta);
   var tags = (meta.tags || []).map(function (t2) {
     return '<a href="/tag/' + encodeURIComponent(t2) + '">#' + escapeHtml(t2) + '</a>';
   }).join(' ');
@@ -667,6 +676,7 @@ async function sharePage(env, id, lang, isAdm) {
     '<pre id="p">' + escapeHtml(prompt) + '</pre>' +
     '<p class="hint">' + t.imgExpiry.replace('{h}', Math.round(SIG_TTL_SEC / 3600)) + '</p></div>' +
     '<p><a href="/upload"><button>' + t.shareCta2 + '</button></a>' +
+    (canEd ? ' <a href="/edit/' + escapeHtml(id) + '"><button>' + t.edit + '</button></a>' : '') +
     (isAdm ? ' <button class="danger" id="delbtn" onclick="delShare()">' + t.delShare + '</button>' : '') + '</p>' +
     '<script>' +
     (isAdm ?
@@ -800,6 +810,70 @@ function uploadPage(email, admin, lang) {
 
 /* ---------- 登录: 我的作品 ---------- */
 
+function canEdit(env, email, meta) {
+  if (!email || !meta) return false;
+  if (isAdmin(env, email)) return true;
+  return String(meta.owner || '').toLowerCase() === String(email).toLowerCase();
+}
+
+/* 编辑页: 标题/中英提示词/标签可改, 图片可选替换 (作者或管理员) */
+async function editPage(env, id, email, lang) {
+  var t = STR[lang];
+  var raw = await env.SHARE.get('s:' + id);
+  if (!raw) {
+    return htmlPage(t.untitled,
+      '<div class="empty"><h2>' + t.notFound + '</h2><p><a href="/">' + t.backHomeLink + '</a></p></div>', lang);
+  }
+  var meta = JSON.parse(raw);
+  if (!canEdit(env, email, meta)) return new Response(t.eNotOwner, { status: 403 });
+  var imgUrl = await signedImgUrl(env, id);
+  return htmlPage(t.editTitle + ' - PromptShare',
+    '<p class="hint"><a href="/f/' + escapeHtml(id) + '">' + t.backToShare + '</a></p>' +
+    '<h2>' + t.editTitle + '</h2>' +
+    '<div class="card"><p class="hint">' + t.curImg + '</p>' +
+    '<img class="full" src="' + imgUrl + '" style="max-height:320px;width:auto"></div>' +
+    '<div class="card">' +
+    '<label class="hint">' + t.titleLabel + '</label>' +
+    '<input id="title" maxlength="80" value="' + escapeHtml(meta.title || '') + '">' +
+    '<label class="hint">' + t.promptZhLabel + '</label>' +
+    '<textarea id="pzh">' + escapeHtml(meta.prompt_zh || meta.prompt || '') + '</textarea>' +
+    '<label class="hint">' + t.promptEnLabel + '</label>' +
+    '<textarea id="pen">' + escapeHtml(meta.prompt_en || '') + '</textarea>' +
+    '<p class="hint">' + t.promptHint + '</p>' +
+    '<label class="hint">' + t.tagsLabel + '</label>' +
+    '<input id="tags" maxlength="120" value="' + escapeHtml((meta.tags || []).join(' ')) + '">' +
+    '<label class="hint">' + t.keepImg + '</label>' +
+    '<input id="file" type="file" accept="image/*">' +
+    '<p><button id="btn" onclick="go()">' + t.save + '</button></p>' +
+    '<p id="msg" class="hint"></p></div>' +
+    '<script>' +
+    'var SID=' + JSON.stringify(id) + ';' +
+    'var E_NOPROMPT=' + JSON.stringify(t.errNoPrompt) + ';' +
+    'var E_UPLOAD=' + JSON.stringify(t.errUpload) + ';' +
+    'var T_UPLOADING=' + JSON.stringify(t.uploading) + ';' +
+    'var T_SAVED=' + JSON.stringify(t.saved) + ';' +
+    'async function go(){' +
+    'var pz=document.getElementById("pzh").value.trim();' +
+    'var pe=document.getElementById("pen").value.trim();' +
+    'var msg=document.getElementById("msg");' +
+    'if(!pz&&!pe){msg.innerHTML="<span class=err>"+E_NOPROMPT+"</span>";return;}' +
+    'msg.textContent=T_UPLOADING;' +
+    'var fd=new FormData();fd.append("id",SID);' +
+    'var f=document.getElementById("file").files[0];if(f)fd.append("image",f);' +
+    'fd.append("prompt_zh",pz);fd.append("prompt_en",pe);' +
+    'fd.append("title",document.getElementById("title").value.trim());' +
+    'fd.append("tags",document.getElementById("tags").value.trim());' +
+    'try{' +
+    'var r=await fetch("/api/edit",{method:"POST",body:fd});' +
+    'var d=await r.json();' +
+    'if(!d.ok){msg.innerHTML="<span class=err>"+(d.error||"fail")+"</span>";return;}' +
+    'msg.innerHTML="<span class=ok>"+T_SAVED+"</span>";' +
+    'setTimeout(function(){location.href="/f/"+SID;},800);' +
+    '}catch(e){msg.innerHTML="<span class=err>"+E_UPLOAD+e+"</span>";}' +
+    '}' +
+    '</script>', lang);
+}
+
 async function minePage(env, email, lang) {
   var t = STR[lang];
   var em = email.toLowerCase();
@@ -842,7 +916,17 @@ async function minePage(env, email, lang) {
   }
 
   body += '<div class="sec-t"><h2>' + t.published + ' (' + pubItems.length + ')</h2></div>';
-  body += pubItems.length ? await gridHtml(env, pubItems, lang) : '<p class="hint">' + t.noPub + '</p>';
+  if (pubItems.length) {
+    body += '<div class="grid">';
+    for (var gi = 0; gi < pubItems.length; gi++) {
+      var gm = pubItems[gi];
+      body += '<div>' + cardHtml(await signedImgUrl(env, gm.id), gm, lang) +
+        '<p style="margin:6px 0"><a href="/edit/' + escapeHtml(gm.id) + '">' + t.edit + '</a></p></div>';
+    }
+    body += '</div>';
+  } else {
+    body += '<p class="hint">' + t.noPub + '</p>';
+  }
 
   return htmlPage(t.mine + ' - PromptShare', body, lang);
 }
@@ -986,6 +1070,66 @@ async function apiUpload(env, req, url, lang) {
   return json({ ok: true, pending: true, msg: 'pending review' });
 }
 
+/* ---------- API: 编辑作品 (作者或管理员; createdAt 不变, 换图则覆盖 R2) ---------- */
+
+async function apiEdit(env, req, url, lang) {
+  var t = STR[lang];
+  var email = await accessEmail(req, env);
+  if (!email) return json({ ok: false, error: t.eLogin }, 401);
+
+  var form;
+  try { form = await req.formData(); }
+  catch (e) { return json({ ok: false, error: t.eForm }, 400); }
+  var id = String(form.get('id') || '');
+  if (!/^[A-Za-z0-9]{10}$/.test(id)) return json({ ok: false, error: t.eBadId }, 400);
+
+  var raw = await env.SHARE.get('s:' + id);
+  if (!raw) return json({ ok: false, error: t.eNotFound }, 404);
+  var meta = JSON.parse(raw);
+  if (!canEdit(env, email, meta)) return json({ ok: false, error: t.eNotOwner }, 403);
+
+  var pzh = String(form.get('prompt_zh') || '').trim().slice(0, 20000);
+  var pen = String(form.get('prompt_en') || '').trim().slice(0, 20000);
+  var title = String(form.get('title') || '').trim().slice(0, 80);
+  var tags = sanitizeTags(form.get('tags'));
+  if (!pzh && !pen) return json({ ok: false, error: t.eNoPrompt }, 400);
+
+  var file = form.get('image');
+  var jobs = [];
+  if (file && typeof file.arrayBuffer === 'function' && file.size > 0) {
+    if (file.size > MAX_IMG_BYTES) return json({ ok: false, error: t.eBig }, 413);
+    if (!/^image\//.test(file.type || '')) return json({ ok: false, error: t.eImgOnly }, 400);
+    var buf = await file.arrayBuffer();
+    jobs.push(env.IMGS.put('img:' + id, buf, {
+      httpMetadata: { contentType: file.type || 'image/jpeg' }
+    }));
+    meta.contentType = file.type || 'image/jpeg';
+    meta.size = file.size;
+  }
+
+  // 标签索引: createdAt 不变, inv 可直接复算; 只删减/新增差异部分
+  var inv = invTs(meta.createdAt);
+  var oldTags = meta.tags || [];
+  for (var i = 0; i < oldTags.length; i++) {
+    if (tags.indexOf(oldTags[i]) === -1)
+      jobs.push(env.SHARE.delete('idx:tag:' + oldTags[i] + ':' + inv + ':' + id));
+  }
+  for (var j = 0; j < tags.length; j++) {
+    if (oldTags.indexOf(tags[j]) === -1)
+      jobs.push(env.SHARE.put('idx:tag:' + tags[j] + ':' + inv + ':' + id, id));
+  }
+
+  meta.title = title;
+  meta.prompt_zh = pzh;
+  meta.prompt_en = pen;
+  meta.prompt = pzh || pen;
+  meta.tags = tags;
+  meta.updatedAt = Date.now();
+  jobs.push(env.SHARE.put('s:' + id, JSON.stringify(meta)));
+  await Promise.all(jobs);
+  return json({ ok: true, id: id });
+}
+
 /* ---------- API: 审核 ---------- */
 
 async function apiReview(env, req, lang) {
@@ -1126,7 +1270,7 @@ export default {
       return new Response('服务端未配置 SIGN_SECRET', { status: 500 });
     }
 
-    if (path === '/healthz') return json({ ok: true, version: 'v3.1-del3' });
+    if (path === '/healthz') return json({ ok: true, version: 'v3.2-edit' });
 
     // 语言切换: ?lang=zh|en -> 写 Cookie 后跳回干净地址 (仅 GET)
     if (req.method === 'GET') {
@@ -1155,7 +1299,7 @@ export default {
     var mF = path.match(/^\/f\/([A-Za-z0-9]{10})$/);
     if (mF && req.method === 'GET') {
       var emF = await accessEmail(req, env);
-      return sharePage(env, mF[1], lang, isAdmin(env, emF));
+      return sharePage(env, mF[1], lang, emF, isAdmin(env, emF));
     }
     var mI = path.match(/^\/img\/([A-Za-z0-9]{10})$/);
     if (mI && req.method === 'GET') return serveImage(env, req, mI[1], url, lang);
@@ -1171,12 +1315,19 @@ export default {
       if (!emM) return needLogin(lang);
       return minePage(env, emM, lang);
     }
+    var mE = path.match(/^\/edit\/([A-Za-z0-9]{10})$/);
+    if (mE && req.method === 'GET') {
+      var emE = await accessEmail(req, env);
+      if (!emE) return needLogin(lang);
+      return editPage(env, mE[1], emE, lang);
+    }
     if (path === '/admin' && req.method === 'GET') {
       var emA = await accessEmail(req, env);
       if (!emA || !isAdmin(env, emA)) return new Response(STR[lang].adminOnly, { status: 403 });
       return adminPage(env, lang);
     }
     if (path === '/api/upload' && req.method === 'POST') return apiUpload(env, req, url, lang);
+    if (path === '/api/edit' && req.method === 'POST') return apiEdit(env, req, url, lang);
     if (path === '/api/review' && req.method === 'POST') return apiReview(env, req, lang);
     if (path === '/api/admin/delete' && req.method === 'POST') return apiDelete(env, req, lang);
     if (path === '/api/admin/reindex' && (req.method === 'POST' || req.method === 'GET')) return apiReindex(env, req, lang);
