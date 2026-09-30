@@ -336,10 +336,17 @@ function htmlPage(title, body, lang, desc) {
     '.thumb img,.dslide img{transition:transform .35s ease}' +
     '.thumb:hover img{transform:scale(1.07)}' +
     '.dslide:hover img{transform:scale(1.05)}' +
-    '@keyframes jiggle{0%{transform:scale(1)}16%{transform:scale(1.1,.88)}34%{transform:scale(.93,1.12)}' +
-    '52%{transform:scale(1.06,.94)}70%{transform:scale(.98,1.04)}to{transform:scale(1)}}' +
-    'img.jiggle{animation:jiggle .42s ease-in-out}' +
-    '@media (prefers-reduced-motion:reduce){.thumb img,.dslide img{transition:none}img.jiggle{animation:none}}' +
+    '@keyframes alive{0%{transform:translate(0,0) rotate(0) scale(1)}' +
+    '18%{transform:translate(2px,-1.5px) rotate(.5deg) scale(1.012)}' +
+    '36%{transform:translate(-2px,1.5px) rotate(-.5deg) scale(1.018)}' +
+    '54%{transform:translate(1.5px,1px) rotate(.35deg) scale(1.012)}' +
+    '72%{transform:translate(-1.5px,-1px) rotate(-.3deg) scale(1.006)}' +
+    '88%{transform:translate(.8px,-.5px) rotate(.12deg) scale(1.002)}' +
+    'to{transform:translate(0,0) rotate(0) scale(1)}}' +
+    'img.alive{animation:alive .55s ease-out}' +
+    '@keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.022)}}' +
+    '.dslide:not(:hover) img:not(.alive){animation:breathe 5.5s ease-in-out infinite}' +
+    '@media (prefers-reduced-motion:reduce){.thumb img,.dslide img{transition:none;animation:none}img.alive{animation:none}}' +
     '.wrap{max-width:1080px;margin:0 auto;padding:24px 20px 60px}' +
     'header.top{display:flex;align-items:center;justify-content:space-between;padding:18px 0;flex-wrap:wrap;gap:12px}' +
     '.logo{font-size:22px;font-weight:700;color:#fff;text-decoration:none;display:inline-flex;align-items:center}' +
@@ -469,10 +476,10 @@ function htmlPage(title, body, lang, desc) {
     'if(car&&car.hasAttribute("data-swp")){e.preventDefault();e.stopPropagation();}},true);' +
     'document.addEventListener("contextmenu",function(e){var t=e.target;if(t&&t.tagName==="IMG")e.preventDefault();},true);' +
     'document.addEventListener("dragstart",function(e){var t=e.target;if(t&&t.tagName==="IMG")e.preventDefault();},true);' +
-    'document.addEventListener("click",function(e){var t=e.target;' +
-    'if(t&&t.tagName==="IMG"){t.classList.remove("jiggle");void t.offsetWidth;t.classList.add("jiggle");}},true);' +
+    'document.addEventListener("pointerdown",function(e){var t=e.target;' +
+    'if(t&&t.tagName==="IMG"){t.classList.remove("alive");void t.offsetWidth;t.classList.add("alive");}},true);' +
     'document.addEventListener("animationend",function(e){' +
-    'if(e.animationName==="jiggle")e.target.classList.remove("jiggle");},true);' +
+    'if(e.animationName==="alive")e.target.classList.remove("alive");},true);' +
     '})();</script>' +
     '</div></body></html>',
     { headers: { 'content-type': 'text/html; charset=utf-8' } });
@@ -1712,7 +1719,7 @@ export default {
       return new Response('服务端未配置 SIGN_SECRET', { status: 500 });
     }
 
-    if (path === '/healthz') return json({ ok: true, version: 'v3.10-fx' });
+    if (path === '/healthz') return json({ ok: true, version: 'v3.11-alive' });
 
     // 语言切换: ?lang=zh|en -> 写 Cookie 后跳回干净地址 (仅 GET)
     if (req.method === 'GET') {

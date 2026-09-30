@@ -4,6 +4,11 @@
   <a href="CHANGELOG.zh-CN.md">中文</a> | <strong>English</strong>
 </p>
 
+## v3.11-alive (2026-09-30)
+
+- Click/tap effect redone as a subtle "alive" tremble (tiny decaying shake, feels like the subject came alive) instead of the cartoonish squash-and-stretch; triggers on pointerdown for instant response.
+- Detail-page image now has a very slow idle "breathing" float (5.5s cycle, pauses while hovering). Hover zoom, anti-download, and prompt copy are unchanged; all motion disabled under prefers-reduced-motion.
+
 ## v3.10-fx (2026-09-30)
 
 - Image effects: hover to zoom on card thumbnails and detail carousel (smooth scale); click/tap plays a jelly jiggle animation (disabled under prefers-reduced-motion).
