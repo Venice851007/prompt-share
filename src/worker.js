@@ -194,7 +194,7 @@ zh: {
   errTimeout: '上传超时(超过3分钟), 请检查网络后重试',
   okPending: '✅ 已提交审核, 通过后上架, 可在「<a href=/mine>我的</a>」查看状态',
   okLive: '✅ 已上架', shareLink: '分享链接:', copyLink: '复制链接', copied: '已复制',
-  promptLabel: '提示词', copyPrompt: '📋 一键复制',
+  promptLabel: '提示词', copyPrompt: '📋 一键复制', dlImg: '📥 下载图片',
   copiedPrompt: '提示词已复制, 去创作吧 ✨', copyFail: '复制失败, 请手动复制',
   sharedBy: '分享', imgExpiry: '图片链接 {h} 小时内有效, 过期请刷新本页',
   shareCta2: '我也分享一个 →',
@@ -270,7 +270,7 @@ en: {
   errTimeout: 'Upload timed out (over 3 min), please check connection and retry',
   okPending: '✅ Submitted for review. Track status under "<a href=/mine>Mine</a>"',
   okLive: '✅ Published', shareLink: 'Share link:', copyLink: 'Copy link', copied: 'Copied',
-  promptLabel: 'Prompt', copyPrompt: '📋 Copy prompt',
+  promptLabel: 'Prompt', copyPrompt: '📋 Copy prompt', dlImg: '📥 Download image',
   copiedPrompt: 'Prompt copied — go create ✨', copyFail: 'Copy failed, please copy manually',
   sharedBy: 'shared', imgExpiry: 'Image link valid for {h}h — refresh this page if it expires',
   shareCta2: 'Share one too →',
@@ -392,6 +392,8 @@ function htmlPage(title, body, lang, desc) {
     '.lbox img{max-width:96vw;max-height:90vh;object-fit:contain}' +
     '.lbox .lx{position:absolute;top:12px;right:16px;background:rgba(255,255,255,.12);border:none;color:#fff;' +
     'font-size:20px;width:42px;height:42px;border-radius:50%;cursor:pointer;z-index:2}' +
+    '.lbox .ldl{position:absolute;top:12px;right:66px;background:rgba(255,255,255,.12);border:none;color:#fff;' +
+    'font-size:18px;width:42px;height:42px;border-radius:50%;cursor:pointer;z-index:2}' +
     '.cmeta{padding:12px 14px}' +
     '.ct{font-size:15px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
     '.csub{font-size:12px;color:#8b93a7;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
@@ -814,6 +816,14 @@ async function sharePage(env, id, lang, email, isAdm) {
   var imgs = imgList(meta);
   var imgUrls = [];
   for (var hi = 0; hi < imgs.length; hi++) imgUrls.push(await signedImgUrl(env, id, imgs[hi].seq));
+  var imgExts = imgs.map(function (im) {
+    var ct = String(im.ct || meta.contentType || 'image/jpeg').split(';')[0].trim().toLowerCase();
+    if (ct === 'image/png') return 'png';
+    if (ct === 'image/webp') return 'webp';
+    if (ct === 'image/gif') return 'gif';
+    if (ct === 'image/avif') return 'avif';
+    return 'jpg';
+  });
   var dslides = imgUrls.map(function (u, i) {
     return '<div class="dslide" onclick="zoomChk(' + i + ')"><div class="dbg" style="background-image:url(\'' + u + '\')"></div>' +
       '<img src="' + u + '" alt="分享图片" draggable="false"></div>';
@@ -827,11 +837,18 @@ async function sharePage(env, id, lang, email, isAdm) {
       : '') +
     '</div>' +
     '<div class="lbox" id="lbox"><button class="lx" onclick="closeLb()">✕</button>' +
+    '<button class="ldl" onclick="event.stopPropagation();dlAt(li)" aria-label="download">📥</button>' +
     '<button class="cnav prev" onclick="event.stopPropagation();lgo(li-1)" aria-label="prev">‹</button>' +
     '<button class="cnav next" onclick="event.stopPropagation();lgo(li+1)" aria-label="next">›</button>' +
     '<img id="lbimg" alt="大图" draggable="false"><div class="ccount" id="lcount"></div></div>' +
     '<script>' +
-    'var DIMGS=' + JSON.stringify(imgUrls) + ';var di=0,li=0;' +
+    'var DIMGS=' + JSON.stringify(imgUrls) + ';' +
+    'var DNAME=' + JSON.stringify(id) + ';var DEXT=' + JSON.stringify(imgExts) + ';' +
+    'var di=0,li=0;' +
+    'function dlAt(i){var u=DIMGS[i];var a=document.createElement("a");a.href=u;' +
+    'a.download="promptshare-"+DNAME+(DIMGS.length>1?"-"+(i+1):"")+"."+(DEXT[i]||"jpg");' +
+    'document.body.appendChild(a);a.click();setTimeout(function(){a.remove();},200);}' +
+    'function dlCur(){dlAt(di);}' +
     'function dgo(n){di=(n+DIMGS.length)%DIMGS.length;' +
     'document.getElementById("dtrack").style.transform="translateX(-"+(di*100)+"%)";' +
     'var ds=document.querySelectorAll("#ddots i");for(var i=0;i<ds.length;i++)ds[i].className=i===di?"on":"";' +
@@ -879,7 +896,8 @@ async function sharePage(env, id, lang, email, isAdm) {
     '<p><span class="hint">' + fmtDate(meta.createdAt, lang) + ' ' + t.sharedBy + '</span></p>' +
     (meta.model ? '<p><span class="badge">🤖 ' + escapeHtml(meta.model) + '</span></p>' : '') +
     (tags ? '<p>' + tags + '</p>' : '') +
-    '<div class="card" style="padding:12px">' + carHtml + '</div>' +
+    '<div class="card" style="padding:12px">' + carHtml +
+    '<p style="margin:10px 0 0"><button onclick="dlCur()">' + t.dlImg + '</button></p></div>' +
     '<div class="card"><div class="hint">' + t.promptLabel + ' ' +
     '<button style="padding:4px 14px;font-size:13px" onclick="copyP()">' + t.copyPrompt + '</button>' + otherLink + '</div>' +
     '<pre id="p">' + escapeHtml(prompt) + '</pre>' +
@@ -1698,7 +1716,7 @@ export default {
       return new Response('服务端未配置 SIGN_SECRET', { status: 500 });
     }
 
-    if (path === '/healthz') return json({ ok: true, version: 'v3.8-model' });
+    if (path === '/healthz') return json({ ok: true, version: 'v3.9-download' });
 
     // 语言切换: ?lang=zh|en -> 写 Cookie 后跳回干净地址 (仅 GET)
     if (req.method === 'GET') {
