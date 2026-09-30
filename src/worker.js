@@ -916,7 +916,7 @@ async function editPage(env, id, email, lang) {
     'if(keep+fs.length>8){msg.innerHTML="<span class=err>"+E_IMGCOUNT+"</span>";return;}' +
     'msg.textContent=T_UPLOADING;' +
     'var fd=new FormData();fd.append("id",SID);' +
-    'if(del.length)fd.append("delSeqs",del.join(","));' +
+    'for(var k=0;k<del.length;k++)fd.append("delSeq",del[k]);' +
     'for(var j=0;j<fs.length;j++)fd.append("images",fs[j]);' +
     'fd.append("prompt_zh",pz);fd.append("prompt_en",pe);' +
     'fd.append("title",document.getElementById("title").value.trim());' +
@@ -1212,8 +1212,7 @@ async function apiEdit(env, req, url, lang) {
   // ---- 图片: 加图 / 删一张或多张 (至少保留 1 张, 最多 MAX_IMGS 张) ----
   var cur = imgList(meta);
   var curSeqs = cur.map(function (x) { return x.seq; });
-  var delSeqs = String(form.get('delSeqs') || '').split(',')
-    .map(function (s) { return s.trim(); });
+  var delSeqs = form.getAll('delSeq').map(function (s) { return String(s).trim(); });
 
   var newFiles = [];
   try {
@@ -1458,7 +1457,7 @@ export default {
       return new Response('服务端未配置 SIGN_SECRET', { status: 500 });
     }
 
-    if (path === '/healthz') return json({ ok: true, version: 'v3.3-multiimg' });
+    if (path === '/healthz') return json({ ok: true, version: 'v3.3.1-delseqfix' });
 
     // 语言切换: ?lang=zh|en -> 写 Cookie 后跳回干净地址 (仅 GET)
     if (req.method === 'GET') {
