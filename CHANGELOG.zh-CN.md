@@ -4,6 +4,11 @@
   <strong>中文</strong> | <a href="CHANGELOG.md">English</a>
 </p>
 
+## v3.8-model (2026-09-30)
+
+- 上传 / 编辑新增选填项「出图模型」（如 Nano Banana、GPT-4o、Midjourney）
+- 主页卡片和详情页显示模型徽标；搜索支持按模型搜
+
 ## v3.7-global (2026-09-30)
 
 - 默认语言改为英文优先：非中文浏览器默认显示英文（浏览器语言为中文则显示中文，Cookie 手动选择仍优先）

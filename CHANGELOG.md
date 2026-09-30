@@ -4,6 +4,11 @@
   <a href="CHANGELOG.zh-CN.md">中文</a> | <strong>English</strong>
 </p>
 
+## v3.8-model (2026-09-30)
+
+- New optional "generation model" field on upload/edit (e.g. Nano Banana, GPT-4o, Midjourney)
+- Model shown as a badge on feed cards and on the detail page; searchable
+
 ## v3.7-global (2026-09-30)
 
 - Default language is now English-first: non-Chinese browsers get English unless the browser locale is Chinese (Cookie choice still takes precedence)
