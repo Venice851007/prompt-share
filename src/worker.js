@@ -164,7 +164,7 @@ zh: {
   home: '首页', upload: '分享作品', mine: '我的', admin: '审核',
   heroH1: '发现优秀 AI 作品, 复制提示词直接用',
   heroP: '社区成员分享的 AI 图片与提示词灵感库',
-  searchPh: '搜索标题 / 标签 / 提示词...', searchBtn: '搜索',
+  searchPh: '搜索标题 / 标签 / 提示词 / 模型...', searchBtn: '搜索',
   shareCta: '📤 分享我的作品',
   featured: '⭐ 精选', latest: '🆕 最新分享',
   tags: '🏷️ 热门标签', moreTags: '🏷️ 更多标签',
@@ -181,6 +181,8 @@ zh: {
   promptZhPh: '粘贴中文提示词...', promptEnPh: 'Paste the English prompt...',
   tagsLabel: '标签 (可选, 最多 5 个, 用逗号或空格分隔, 如: 人物, 摄影)',
   tagsPh: '人物, 摄影, 动漫...',
+  modelLabel: '出图模型 (选填, 如: Nano Banana、GPT-4o、Midjourney)',
+  modelPh: 'Nano Banana',
   imgLabel: '图片 * (最大 10MB)',
   featuredLabel: '设为精选 (首页展示)',
   submit: '上传', uploading: '上传中...',
@@ -238,7 +240,7 @@ en: {
   home: 'Home', upload: 'Share', mine: 'Mine', admin: 'Review',
   heroH1: 'Discover great AI artwork, copy the prompt and create',
   heroP: 'A gallery of AI images and prompts shared by the community',
-  searchPh: 'Search titles / tags / prompts...', searchBtn: 'Search',
+  searchPh: 'Search titles / tags / prompts / models...', searchBtn: 'Search',
   shareCta: '📤 Share my work',
   featured: '⭐ Featured', latest: '🆕 Latest',
   tags: '🏷️ Popular tags', moreTags: '🏷️ More tags',
@@ -255,6 +257,8 @@ en: {
   promptZhPh: 'Paste the Chinese prompt...', promptEnPh: 'Paste the English prompt...',
   tagsLabel: 'Tags (optional, up to 5, comma/space separated, e.g. portrait, photography)',
   tagsPh: 'portrait, photography, anime...',
+  modelLabel: 'Generation model (optional, e.g. Nano Banana, GPT-4o, Midjourney)',
+  modelPh: 'Nano Banana',
   imgLabel: 'Image * (max 10MB)',
   featuredLabel: 'Feature this (show on homepage)',
   submit: 'Upload', uploading: 'Uploading...',
@@ -392,6 +396,7 @@ function htmlPage(title, body, lang, desc) {
     '.ct{font-size:15px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
     '.csub{font-size:12px;color:#8b93a7;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
     '.ctags{font-size:12px;color:#7aa2ff;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+    '.cmodel{display:inline-block;font-size:11px;color:#0f1115;background:#7aa2ff;border-radius:10px;padding:1px 8px;margin-top:6px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}' +
     '.sec-t{display:flex;align-items:center;justify-content:space-between;margin:34px 0 6px}' +
     '.sec-t h2{font-size:20px;margin:0}' +
     '.tagcloud{margin:10px 0}' +
@@ -638,6 +643,7 @@ async function cardHtml(env, meta, lang) {
   return '<a class="card-item" href="/f/' + escapeHtml(meta.id) + '">' + thumb +
     '<div class="cmeta"><div class="ct">' + escapeHtml(meta.title || STR[lang].untitled) + '</div>' +
     '<div class="csub">' + fmtDate(meta.createdAt, lang) + '</div>' +
+    (meta.model ? '<div><span class="cmodel">🤖 ' + escapeHtml(meta.model) + '</span></div>' : '') +
     (tags ? '<div class="ctags">' + tags + '</div>' : '') +
     '</div></a>';
 }
@@ -781,7 +787,7 @@ async function searchPage(env, url, lang) {
       for (var j = 0; j < metas.length && hits.length < PAGE_SIZE; j++) {
         var m = metas[j];
         if (!m) continue;
-        var hay = ((m.title || '') + ' ' + (m.tags || []).join(' ') + ' ' +
+        var hay = ((m.title || '') + ' ' + (m.tags || []).join(' ') + ' ' + (m.model || '') + ' ' +
           (m.prompt_zh || '') + ' ' + (m.prompt_en || '') + ' ' + (m.prompt || '')).toLowerCase();
         if (hay.indexOf(ql) >= 0) hits.push(m);
       }
@@ -871,6 +877,7 @@ async function sharePage(env, id, lang, email, isAdm) {
     '<p class="hint"><a href="/">' + t.backHome + '</a></p>' +
     '<h2 style="margin:6px 0">🖼️ ' + escapeHtml(title) + '</h2>' +
     '<p><span class="hint">' + fmtDate(meta.createdAt, lang) + ' ' + t.sharedBy + '</span></p>' +
+    (meta.model ? '<p><span class="badge">🤖 ' + escapeHtml(meta.model) + '</span></p>' : '') +
     (tags ? '<p>' + tags + '</p>' : '') +
     '<div class="card" style="padding:12px">' + carHtml + '</div>' +
     '<div class="card"><div class="hint">' + t.promptLabel + ' ' +
@@ -972,6 +979,8 @@ function uploadPage(email, admin, lang) {
     '<p class="hint">' + t.promptHint + '</p>' +
     '<label class="hint">' + t.tagsLabel + '</label>' +
     '<input id="tags" maxlength="120" placeholder="' + escapeHtml(t.tagsPh) + '">' +
+    '<label class="hint">' + t.modelLabel + '</label>' +
+    '<input id="model" maxlength="40" placeholder="' + escapeHtml(t.modelPh) + '">' +
     '<label class="hint">' + t.imgsLabel + '</label>' +
     '<input id="file" type="file" accept="image/*" multiple>' +
     (admin ? '<p><label class="hint"><input id="featured" type="checkbox" style="width:auto"> ' + t.featuredLabel + '</label></p>' : '') +
@@ -1007,6 +1016,7 @@ function uploadPage(email, admin, lang) {
     'fd.append("prompt_zh",pz);fd.append("prompt_en",pe);' +
     'fd.append("title",document.getElementById("title").value.trim());' +
     'fd.append("tags",document.getElementById("tags").value.trim());' +
+    'fd.append("model",document.getElementById("model").value.trim());' +
     'var fc=document.getElementById("featured");if(fc&&fc.checked)fd.append("featured","1");' +
     'var ctl=new AbortController();var tm=setTimeout(function(){ctl.abort();},180000);' +
     'try{' +
@@ -1066,6 +1076,8 @@ async function editPage(env, id, email, lang) {
     '<p class="hint">' + t.promptHint + '</p>' +
     '<label class="hint">' + t.tagsLabel + '</label>' +
     '<input id="tags" maxlength="120" value="' + escapeHtml((meta.tags || []).join(' ')) + '">' +
+    '<label class="hint">' + t.modelLabel + '</label>' +
+    '<input id="model" maxlength="40" value="' + escapeHtml(meta.model || '') + '">' +
     '<label class="hint">' + t.addImgs + '</label>' +
     '<input id="file" type="file" accept="image/*" multiple>' +
     '<p class="hint">' + t.imgsLeft.replace('{n}', canAdd) + '</p>' +
@@ -1100,6 +1112,7 @@ async function editPage(env, id, email, lang) {
     'fd.append("prompt_zh",pz);fd.append("prompt_en",pe);' +
     'fd.append("title",document.getElementById("title").value.trim());' +
     'fd.append("tags",document.getElementById("tags").value.trim());' +
+    'fd.append("model",document.getElementById("model").value.trim());' +
     'var ctl=new AbortController();var tm=setTimeout(function(){ctl.abort();},180000);' +
     'try{' +
     'var r=await fetch("/api/edit",{method:"POST",body:fd,signal:ctl.signal});' +
@@ -1315,6 +1328,7 @@ async function apiUpload(env, req, url, lang) {
   var pen = String(form.get('prompt_en') || '').trim().slice(0, 20000);
   var title = String(form.get('title') || '').trim().slice(0, 80);
   var tags = sanitizeTags(form.get('tags'));
+  var model = String(form.get('model') || '').trim().slice(0, 40);
   var wantFeatured = String(form.get('featured') || '') === '1';
 
   if (!files.length) {
@@ -1346,7 +1360,7 @@ async function apiUpload(env, req, url, lang) {
   var meta = {
     id: id, title: title,
     prompt: pzh || pen, prompt_zh: pzh, prompt_en: pen,
-    tags: tags,
+    tags: tags, model: model,
     images: images, imgSeq: files.length - 1,
     contentType: images[0].ct, size: images[0].size,
     owner: email, author: email.split('@')[0],
@@ -1417,6 +1431,7 @@ async function apiEdit(env, req, url, lang) {
   var pen = String(form.get('prompt_en') || '').trim().slice(0, 20000);
   var title = String(form.get('title') || '').trim().slice(0, 80);
   var tags = sanitizeTags(form.get('tags'));
+  var model = String(form.get('model') || '').trim().slice(0, 40);
   if (!pzh && !pen) return json({ ok: false, error: t.eNoPrompt }, 400);
 
   // ---- 图片: 加图 / 删一张或多张 (至少保留 1 张, 最多 MAX_IMGS 张) ----
@@ -1513,6 +1528,7 @@ async function apiEdit(env, req, url, lang) {
   meta.prompt_en = pen;
   meta.prompt = pzh || pen;
   meta.tags = tags;
+  meta.model = model;
   meta.updatedAt = Date.now();
   jobs.push(env.SHARE.put('s:' + id, JSON.stringify(meta)));
   await Promise.all(jobs);
@@ -1682,7 +1698,7 @@ export default {
       return new Response('服务端未配置 SIGN_SECRET', { status: 500 });
     }
 
-    if (path === '/healthz') return json({ ok: true, version: 'v3.7-global' });
+    if (path === '/healthz') return json({ ok: true, version: 'v3.8-model' });
 
     // 语言切换: ?lang=zh|en -> 写 Cookie 后跳回干净地址 (仅 GET)
     if (req.method === 'GET') {
