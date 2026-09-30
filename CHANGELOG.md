@@ -1,59 +1,63 @@
-# 更新日志
+# Changelog
+
+<p align="center">
+  <a href="CHANGELOG.zh-CN.md">中文</a> | <strong>English</strong>
+</p>
 
 ## v3.6-logo (2026-09-30)
 
-- 项目视觉标识：深色圆角标 + 蓝色图片图形
-- 网站 header 加图形 logo，favicon 同步
-- README 顶部展示 logo
+- Brand identity: dark rounded badge with a blue image glyph (`assets/logo.svg`)
+- Header wordmark now paired with the graphic logo; favicon updated to match
+- Logo showcased at the top of the README
 
 ## v3.5-cardswipe (2026-09-30)
 
-- 首页 / 标签页 / 搜索页的瀑布流卡片：多图作品可直接在卡片上左右翻看
-  （桌面悬停出左右箭头，手机左右滑动，右下角 n/m 计数，滑动防误触不跳转）
-- 单图作品卡片保持原样
+- Feed cards on home / tag / search pages: multi-image works can be flipped through right on the card
+  (arrow buttons on hover for desktop, swipe on mobile, n/m counter, swipe doesn't trigger navigation)
+- Single-image cards unchanged
 
 ## v3.4.2-feattoggle (2026-09-30)
 
-- `/admin` 新增「已发布作品」区：每条可随时设为精选 / 取消精选
-- `POST /api/review` 新增 `feature` 动作（幂等，仅管理员）
+- `/admin` gains a "Published works" section: toggle featured status on any published work
+- `POST /api/review` gains the `feature` action (idempotent, admin-only)
 
 ## v3.4.1-noauthor (2026-09-30)
 
-- 访客可见处去掉作者名（首页卡片、精选轮播、详情页只留日期）
-- `/mine` 管理员自看保留作者信息
+- Author names removed from all public surfaces (cards, hero carousel, detail page — date only)
+- `/mine` still shows author info to admins
 
 ## v3.4-xiaohongshu (2026-09-30)
 
-- 首页精选改为全幅大图轮播：最大篇幅、图片完整显示不裁切、左右滑动、每次打开客户端随机排序
-- 首页最新区改为瀑布流（图片完整显示）
-- 详情页多图改为滑动轮播：n/m 计数 + 小圆点 + 点图全屏 + 防误触，桌面支持左右方向键
+- Featured section becomes a full-width hero carousel: large images, no cropping, swipeable, shuffled on every load
+- Latest section becomes a masonry feed (full images)
+- Detail page gallery becomes a swipeable carousel: n/m counter, dots, tap for fullscreen, arrow-key support on desktop
 
 ## v3.3.2-uploadfix (2026-09-30)
 
-- 上传 / 编辑页客户端加固：单张超 10MB、总和超 60MB 本地拦截
-- fetch 加 3 分钟超时，网络中断 / 超时显示友好错误（不再甩 raw TypeError）
+- Upload / edit forms hardened on the client: files over 10MB each or 60MB total are rejected locally
+- 3-minute fetch timeout with friendly error messages on network failure (no more raw TypeErrors)
 
 ## v3.3.1-delseqfix (2026-09-30)
 
-- 修复编辑表单 `delSeqs` 空字段歧义 bug（没勾选删图时不再误删封面）
+- Fixed the edit form's `delSeqs` empty-field ambiguity (no longer deletes the cover when nothing was checked)
 
 ## v3.3-multiimg (2026-09-30)
 
-- 一条作品支持多张示例图（最多 8 张）：上传多选、编辑可增删、至少保留 1 张
-- 第一张为封面，删封面后自动提位；删除作品时清全部图片
-- 详情页大图 + 缩略图切换；兼容旧单图记录
+- One work can now hold multiple images (up to 8): multi-select on upload, add/remove in edit, minimum 1 kept
+- First image is the cover; deleting the cover promotes the next one; deleting a work clears all its images
+- Detail page: large image + thumbnail strip; old single-image records remain compatible
 
 ## v3.2-edit (2026-09-30)
 
-- 作品编辑功能：改标题 / 中英提示词 / 标签，可选换图
-- 标签索引差异更新；`createdAt` 不变（编辑不顶到"最新"最前），另记 `updatedAt`
+- Edit works: title / bilingual prompts / tags, optional image replacement
+- Tag index updated differentially; `createdAt` untouched (edits don't bump to the top of "latest"), `updatedAt` recorded separately
 
 ## v3.1-del3 (2026-09-30)
 
-- 管理员删除作品：详情页两步确认，删除时清 KV 主记录、R2 图片及全部索引
+- Admin work deletion: two-step confirm on the detail page; clears the KV record, R2 images, and all indexes
 
 ## v2 (2026-09-30)
 
-- 公开画廊首页（精选 + 最新 + 标签云 + 搜索）、`/tag/:tag`、`/search`
-- `/f/:id` 一键复制提示词、`/upload`、`/mine`、`/admin` 精选管理
-- Cloudflare Access 鉴权（公开区 Bypass / 写操作 Allow）、图片签名防盗链
+- Public gallery homepage (featured + latest + tag cloud + search), `/tag/:tag`, `/search`
+- `/f/:id` one-click prompt copy, `/upload`, `/mine`, `/admin` featured management
+- Cloudflare Access auth (Bypass for public areas / Allow for write operations), signed image URLs with hotlink protection

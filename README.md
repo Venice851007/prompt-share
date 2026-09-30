@@ -4,103 +4,108 @@
   <img src="assets/logo.svg" width="96" alt="Prompt Share logo">
 </p>
 
-一个单文件 Cloudflare Worker 实现的「提示词 + 图片」分享小站。
+<p align="center">
+  <a href="README.zh-CN.md">中文</a> | <strong>English</strong>
+</p>
 
-**样品站**: https://prompt.minispacex.com/
+A single-file Cloudflare Worker that turns "prompt + generated images" into a shareable short link.
 
-把"提示词 + 出图"打包成一个短链接，发到 X / 小红书 / 微信都行。
-访客不用登录就能逛画廊、看图、一键复制提示词；站长登录后上传，支持审核制多人协作。
+**Live demo**: https://prompt.minispacex.com/
 
-## 功能
+Share your prompt and generations to X / Xiaohongshu / WeChat with one link.
+Visitors browse the public gallery and copy prompts with one click — no login required.
+Owners log in to upload, with support for moderated multi-user collaboration.
 
-**访客（免登录）**
-- 首页公开画廊：精选大图轮播（每次打开随机排序）+ 瀑布流最新作品
-- 标签云、标签页、全文搜索（标题 / 标签 / 提示词）
-- 作品详情页：一键复制提示词，多图左右滑动查看（支持手机手势）
-- 最新区卡片：多图作品可直接在卡片上左右翻看
+## Features
 
-**站长 / 管理员（Access 登录）**
-- 上传作品：标题、中英文提示词、标签，一次最多 8 张图
-- 管理员上传直接上架（可设精选），普通用户上传进待审队列
-- `/admin`：审核上架、精选管理、已发布作品随时设为精选 / 取消精选
-- `/mine`：管理自己的待审和已上架作品，支持编辑（换标题、改图、增删图片）
+**Visitors (no login)**
+- Public gallery homepage: featured hero carousel (shuffled on every load) + masonry feed of latest works
+- Tag cloud, tag pages, full-text search (title / tags / prompt)
+- Work detail page: one-click prompt copy, swipe through multiple images (touch gestures on mobile)
+- Multi-image cards in the feed can be flipped through right on the card
 
-**不做的**：浏览 / 点赞统计、评论、关注 —— 小圈子不需要，KV 免费写额度也撑不起。
+**Owners / Admins (Access login)**
+- Upload works: title, bilingual prompts, tags, up to 8 images per work
+- Admin uploads go live instantly (can mark as featured); regular users' uploads enter a review queue
+- `/admin`: review queue, featured management, toggle featured status on any published work
+- `/mine`: manage your pending and published works, edit them (retitle, swap images, add/remove images)
 
-## 技术栈
+**Deliberately not built**: view/like counters, comments, follows — a small circle doesn't need them, and KV's free write quota couldn't sustain them anyway.
 
-- **Cloudflare Workers**：全部逻辑在一个 `src/worker.js`（单文件，无依赖）
-- **R2**：私有图床（图片经 Worker 代理，不暴露直链）
-- **KV**：元数据 + 索引（最新 / 用户 / 标签 / 精选）
-- **Cloudflare Access (Zero Trust)**：登录鉴权，50 用户内免费
-- **Workers Builds**：连 GitHub 仓库，push 到 main 自动部署
+## Tech Stack
 
-## 安全设计
+- **Cloudflare Workers**: all logic in a single `src/worker.js` (zero dependencies)
+- **R2**: private image storage (images proxied through the Worker, no direct URLs exposed)
+- **KV**: metadata + indexes (latest / by-user / by-tag / featured)
+- **Cloudflare Access (Zero Trust)**: authentication, free up to 50 users
+- **Workers Builds**: connect the GitHub repo, push to `main` to deploy
 
-1. **防盗链**：图片经 Worker 代理，Referer 非本站 403（空 Referer 放行：直接打开、IM 内分享是正常行为）
-2. **签名 URL**：图片地址带 HMAC 签名，6 小时过期
-3. **强缓存**：`Cache-Control: public, max-age=31536000, immutable`
-4. **限流**：上传每 IP 每小时 20 次；图片每 IP 每分钟 120 次
-5. **JWT 二次校验**：Worker 侧校验 `Cf-Access-Jwt-Assertion` 的签名 / aud / 过期，绕过 Access 直接打 Worker 域名也进不来
-6. **密钥不进仓库**：`SIGN_SECRET` 只放在 Dashboard Secrets 里
+## Security
 
-## 自己部署一套
+1. **Hotlink protection**: images are proxied; non-local Referer gets 403 (empty Referer allowed: direct opens and IM shares are legitimate)
+2. **Signed URLs**: image URLs carry an HMAC signature, expiring in 6 hours
+3. **Aggressive caching**: `Cache-Control: public, max-age=31536000, immutable`
+4. **Rate limiting**: 20 uploads / IP / hour; 120 image requests / IP / minute
+5. **Server-side JWT verification**: the Worker verifies the `Cf-Access-Jwt-Assertion` signature / aud / expiry — hitting the Worker domain directly without Access still gets blocked
+6. **Secrets stay out of the repo**: `SIGN_SECRET` lives only in Dashboard Secrets
 
-### 1. 建 R2 bucket
+## Deploy Your Own
 
-Dashboard → R2 → Create bucket，如 `prompt-share-imgs`。**不要**开公开访问（保持私有）。
+### 1. Create an R2 bucket
 
-### 2. 建 KV namespace
+Dashboard → R2 → Create bucket, e.g. `prompt-share-imgs`. Keep it **private** (no public access).
 
-Workers & Pages → KV → Create namespace，如 `prompt-share`。
+### 2. Create a KV namespace
 
-### 3. Workers 连 GitHub 自动部署
+Workers & Pages → KV → Create namespace, e.g. `prompt-share`.
 
-Workers & Pages → Create → Import a repository → 选本仓库 → Deploy。
-记下 `*.workers.dev` 域名，建议再绑自己的域名（Settings → Domains）。
+### 3. Connect Workers to GitHub for auto-deploy
 
-### 4. 配绑定和变量
+Workers & Pages → Create → Import a repository → select this repo → Deploy.
+Note the assigned `*.workers.dev` domain; binding your own domain is recommended (Settings → Domains).
 
-Workers → Settings → Bindings：
-- R2 bucket → Variable name `IMGS` → 选第 1 步的 bucket
-- KV namespace → Variable name `SHARE` → 选第 2 步的 namespace
+### 4. Configure bindings and variables
 
-Settings → Variables：
-- **Secret** `SIGN_SECRET` = 随机字符串（`openssl rand -hex 32`）
-- **Text** `ADMIN_EMAILS` = 你的邮箱（多个逗号分隔）
-- **Text** `ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` = 第 5 步建好 Access 应用后回填
+Workers → Settings → Bindings:
+- R2 bucket → variable name `IMGS` → the bucket from step 1
+- KV namespace → variable name `SHARE` → the namespace from step 2
 
-### 5. 配 Cloudflare Access (Zero Trust)
+Settings → Variables:
+- **Secret** `SIGN_SECRET` = random string (`openssl rand -hex 32`)
+- **Text** `ADMIN_EMAILS` = your email (comma-separated for multiple)
+- **Text** `ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` = fill in after step 5, then Redeploy
 
-Zero Trust Dashboard → Access → Applications，建两个应用：
+### 5. Configure Cloudflare Access (Zero Trust)
 
-**应用一 `prompt-share-public`（Bypass，所有人）**，两个域名各加：
+Zero Trust Dashboard → Access → Applications. Create two applications:
+
+**App 1 `prompt-share-public` (Bypass, everyone)**, add on both domains:
 `/`、`/tag/*`、`/search*`、`/f/*`、`/img/*`
 
-**应用二 `prompt-share`（Allow，邮箱白名单）**，两个域名各加：
+**App 2 `prompt-share` (Allow, email allowlist)**, add on both domains:
 `/upload`、`/mine`、`/api/*`、`/admin/*`
-- Policy → Allow → Emails：填管理员 + 普通用户邮箱（≤50 人免费）
-- 建好后把应用总览页的 **AUD** 和 Team Domain 回填到第 4 步，再 Redeploy
+- Policy → Allow → Emails: admin + regular users' emails (free up to 50 users)
+- Copy the app's **AUD** and your Team Domain back into step 4, then Redeploy
 
-加人/删人：以后直接改 Policy 的邮箱名单，即时生效，不用动代码。
+Adding/removing people later: just edit the Policy's email list — takes effect immediately, no code changes.
 
-### 6. 验证
+### 6. Verify
 
-1. 无痕打开首页 → **不跳登录**，直接看到画廊
-2. 点"分享作品" → 跳 Access 登录
-3. 管理员上传一张图（勾选精选）→ 拿到 `/f/` 链接，首页精选区出现
-4. `/mine`、`/admin` 功能正常
+1. Open the homepage in an incognito window → **no login redirect**, gallery visible
+2. Click "Share a work" → Access login appears
+3. Log in as admin → `/upload` a work (mark as featured) → get the `/f/` link, it shows up in the featured section
+4. `/mine` and `/admin` work as expected
 
-## 免费额度（2026 年）
+## Free Tier (2026)
 
-| 资源 | 免费额度 |
+| Resource | Free quota |
 |---|---|
-| R2 | 10GB 存储 / 月，100 万次写入，1000 万次读取，出站流量免费 |
-| KV | 1GB 存储，每天 10 万次读 / 1000 次写 |
-| Workers | 每天 10 万次请求 |
-| Access | 50 用户以内免费 |
+| R2 | 10 GB storage / month, 1M writes, 10M reads, free egress |
+| KV | 1 GB storage, 100K reads / 1K writes per day |
+| Workers | 100K requests / day |
+| Access | free up to 50 users |
 
-## 本地开发
+## Local Development
 
 ```bash
 npx wrangler dev
@@ -108,19 +113,22 @@ npx wrangler deploy
 npx wrangler secret put SIGN_SECRET
 ```
 
-## 文件结构
+## Project Structure
 
 ```
-src/worker.js    全部逻辑（单文件，无依赖）
-wrangler.toml    部署配置
-README.md        本文件
-CHANGELOG.md     更新日志
+src/worker.js    all logic (single file, zero dependencies)
+assets/logo.svg  project logo
+wrangler.toml    deploy configuration
+README.md        this file (English)
+README.zh-CN.md  中文文档
+CHANGELOG.md     changelog (English)
+CHANGELOG.zh-CN.md  更新日志
 ```
 
-## 更新日志
+## Changelog
 
-见 [CHANGELOG.md](CHANGELOG.md)。
+See [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
-[MIT](LICENSE) — 随便用，留个出处就行。
+[MIT](LICENSE) — do whatever you want, attribution appreciated.
