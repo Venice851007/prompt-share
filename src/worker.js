@@ -578,7 +578,7 @@ function cardHtml(imgUrl, meta, lang) {
   return '<a class="card-item" href="/f/' + escapeHtml(meta.id) + '">' +
     '<div class="thumb"><img loading="lazy" src="' + imgUrl + '" alt="' + escapeHtml(meta.title || '') + '"></div>' +
     '<div class="cmeta"><div class="ct">' + escapeHtml(meta.title || STR[lang].untitled) + '</div>' +
-    '<div class="csub">by ' + escapeHtml(meta.author || meta.owner || '?') + ' · ' + fmtDate(meta.createdAt, lang) + '</div>' +
+    '<div class="csub">' + fmtDate(meta.createdAt, lang) + '</div>' +
     (tags ? '<div class="ctags">' + tags + '</div>' : '') +
     '</div></a>';
 }
@@ -603,7 +603,7 @@ async function featHeroHtml(env, metas, lang) {
       '<img class="main" src="' + u + '" alt="' + escapeHtml(m.title || '') + '" draggable="false">' +
       '<a class="fcap" href="/f/' + escapeHtml(m.id) + '">' +
       '<div class="t">' + escapeHtml(m.title || STR[lang].untitled) + '</div>' +
-      '<div class="s">by ' + escapeHtml(m.author || m.owner || '?') + (tags ? ' · ' + tags : '') + '</div>' +
+      '<div class="s">' + (tags ? tags + ' · ' : '') + fmtDate(m.createdAt, lang) + '</div>' +
       '</a></div>');
   }
   return '<div class="fhero"><div class="ftrack" id="ftrack">' + slides.join('') + '</div>' +
@@ -811,8 +811,7 @@ async function sharePage(env, id, lang, email, isAdm) {
   return htmlPage(title + ' - PromptShare',
     '<p class="hint"><a href="/">' + t.backHome + '</a></p>' +
     '<h2 style="margin:6px 0">🖼️ ' + escapeHtml(title) + '</h2>' +
-    '<p><span class="badge">' + escapeHtml(meta.author || meta.owner || '?') + '</span>' +
-    '<span class="hint">' + fmtDate(meta.createdAt, lang) + ' ' + t.sharedBy + '</span></p>' +
+    '<p><span class="hint">' + fmtDate(meta.createdAt, lang) + ' ' + t.sharedBy + '</span></p>' +
     (tags ? '<p>' + tags + '</p>' : '') +
     '<div class="card" style="padding:12px">' + carHtml + '</div>' +
     '<div class="card"><div class="hint">' + t.promptLabel + ' ' +
@@ -1582,7 +1581,7 @@ export default {
       return new Response('服务端未配置 SIGN_SECRET', { status: 500 });
     }
 
-    if (path === '/healthz') return json({ ok: true, version: 'v3.4-xiaohongshu' });
+    if (path === '/healthz') return json({ ok: true, version: 'v3.4.1-noauthor' });
 
     // 语言切换: ?lang=zh|en -> 写 Cookie 后跳回干净地址 (仅 GET)
     if (req.method === 'GET') {
