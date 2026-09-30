@@ -186,6 +186,10 @@ zh: {
   submit: '上传', uploading: '上传中...',
   errNoImg: '请先选一张图片', errNoPrompt: '至少填写一种语言的提示词',
   errUpload: '上传失败: ',
+  errTooBig: '有图片超过 10MB, 请压缩后再传',
+  errTotalBig: '图片总体积超过 60MB, 请分批上传',
+  errNet: '网络连接中断, 请检查网络后重试',
+  errTimeout: '上传超时(超过3分钟), 请检查网络后重试',
   okPending: '✅ 已提交审核, 通过后上架, 可在「<a href=/mine>我的</a>」查看状态',
   okLive: '✅ 已上架', shareLink: '分享链接:', copyLink: '复制链接', copied: '已复制',
   promptLabel: '提示词', copyPrompt: '📋 一键复制',
@@ -255,6 +259,10 @@ en: {
   submit: 'Upload', uploading: 'Uploading...',
   errNoImg: 'Please choose an image first', errNoPrompt: 'Please fill in the prompt in at least one language',
   errUpload: 'Upload failed: ',
+  errTooBig: 'One image exceeds 10MB, please compress and retry',
+  errTotalBig: 'Total size over 60MB, please upload in batches',
+  errNet: 'Network interrupted, please check connection and retry',
+  errTimeout: 'Upload timed out (over 3 min), please check connection and retry',
   okPending: '✅ Submitted for review. Track status under "<a href=/mine>Mine</a>"',
   okLive: '✅ Published', shareLink: 'Share link:', copyLink: 'Copy link', copied: 'Copied',
   promptLabel: 'Prompt', copyPrompt: '📋 Copy prompt',
@@ -816,7 +824,10 @@ function uploadPage(email, admin, lang) {
     'var E_NOIMG=' + JSON.stringify(t.errNoImg) + ';' +
     'var E_NOPROMPT=' + JSON.stringify(t.errNoPrompt) + ';' +
     'var E_UPLOAD=' + JSON.stringify(t.errUpload) + ';' +
-    'var E_IMGCOUNT=' + JSON.stringify(t.eImgCount) + ';' +
+    'var E_TOOBIG=' + JSON.stringify(t.errTooBig) + ';' +
+    'var E_TOTALBIG=' + JSON.stringify(t.errTotalBig) + ';' +
+    'var E_NET=' + JSON.stringify(t.errNet) + ';' +
+    'var E_TIMEOUT=' + JSON.stringify(t.errTimeout) + ';' +
     'var T_UPLOADING=' + JSON.stringify(t.uploading) + ';' +
     'var T_OKP=' + JSON.stringify(t.okPending) + ';' +
     'var T_OKL=' + JSON.stringify(t.okLive) + ';' +
@@ -831,6 +842,8 @@ function uploadPage(email, admin, lang) {
     'if(!fs.length){msg.innerHTML="<span class=err>"+E_NOIMG+"</span>";return;}' +
     'if(fs.length>8){msg.innerHTML="<span class=err>"+E_IMGCOUNT+"</span>";return;}' +
     'if(!pz&&!pe){msg.innerHTML="<span class=err>"+E_NOPROMPT+"</span>";return;}' +
+    'var total=0,si;for(si=0;si<fs.length;si++){if(fs[si].size>10485760){msg.innerHTML="<span class=err>"+E_TOOBIG+"</span>";return;}total+=fs[si].size;}' +
+    'if(total>62914560){msg.innerHTML="<span class=err>"+E_TOTALBIG+"</span>";return;}' +
     'msg.textContent=T_UPLOADING;out.innerHTML="";' +
     'var fd=new FormData();' +
     'for(var i=0;i<fs.length;i++)fd.append("images",fs[i]);' +
@@ -838,15 +851,19 @@ function uploadPage(email, admin, lang) {
     'fd.append("title",document.getElementById("title").value.trim());' +
     'fd.append("tags",document.getElementById("tags").value.trim());' +
     'var fc=document.getElementById("featured");if(fc&&fc.checked)fd.append("featured","1");' +
+    'var ctl=new AbortController();var tm=setTimeout(function(){ctl.abort();},180000);' +
     'try{' +
-    'var r=await fetch("/api/upload",{method:"POST",body:fd});' +
+    'var r=await fetch("/api/upload",{method:"POST",body:fd,signal:ctl.signal});' +
+    'clearTimeout(tm);' +
     'var d=await r.json();' +
     'if(!d.ok){msg.innerHTML="<span class=err>"+d.error+"</span>";return;}' +
     'if(d.pending){msg.innerHTML="<span class=ok>"+T_OKP+"</span>";return;}' +
     'msg.innerHTML="<span class=ok>"+T_OKL+"</span>";' +
     'out.innerHTML="<div class=card><div class=hint>"+T_LINK+"</div><p><a href="+d.url+">"+d.url+"</a></p>" +' +
     '"<button onclick=\\"navigator.clipboard.writeText(\\""+d.url+"\\").then(()=>alert(\\""+T_COPIED+"\\"))\\">"+T_COPYL+"</button>";' +
-    '}catch(e){msg.innerHTML="<span class=err>"+E_UPLOAD+e+"</span>";}' +
+    '}catch(e){clearTimeout(tm);var em=E_NET;if(e&&e.name==="AbortError")em=E_TIMEOUT;' +
+    'else if(e&&/failed to fetch|networkerror/i.test(String(e&&e.message||e)))em=E_NET;' +
+    'else em=E_UPLOAD+String(e);msg.innerHTML="<span class=err>"+em+"</span>";}' +
     '}' +
     '</script>', lang);
 }
@@ -901,7 +918,10 @@ async function editPage(env, id, email, lang) {
     'var SID=' + JSON.stringify(id) + ';' +
     'var E_NOPROMPT=' + JSON.stringify(t.errNoPrompt) + ';' +
     'var E_UPLOAD=' + JSON.stringify(t.errUpload) + ';' +
-    'var E_IMGCOUNT=' + JSON.stringify(t.eImgCount) + ';' +
+    'var E_TOOBIG=' + JSON.stringify(t.errTooBig) + ';' +
+    'var E_TOTALBIG=' + JSON.stringify(t.errTotalBig) + ';' +
+    'var E_NET=' + JSON.stringify(t.errNet) + ';' +
+    'var E_TIMEOUT=' + JSON.stringify(t.errTimeout) + ';' +
     'var T_UPLOADING=' + JSON.stringify(t.uploading) + ';' +
     'var T_SAVED=' + JSON.stringify(t.saved) + ';' +
     'async function go(){' +
@@ -910,6 +930,8 @@ async function editPage(env, id, email, lang) {
     'var msg=document.getElementById("msg");' +
     'if(!pz&&!pe){msg.innerHTML="<span class=err>"+E_NOPROMPT+"</span>";return;}' +
     'var fs=document.getElementById("file").files;' +
+    'var total=0,fi;for(fi=0;fi<fs.length;fi++){if(fs[fi].size>10485760){msg.innerHTML="<span class=err>"+E_TOOBIG+"</span>";return;}total+=fs[fi].size;}' +
+    'if(total>62914560){msg.innerHTML="<span class=err>"+E_TOTALBIG+"</span>";return;}' +
     'var cbs=document.querySelectorAll(".delcb");' +
     'var del=[];for(var i=0;i<cbs.length;i++)if(cbs[i].checked)del.push(cbs[i].value);' +
     'var keep=cbs.length-del.length;' +
@@ -921,13 +943,17 @@ async function editPage(env, id, email, lang) {
     'fd.append("prompt_zh",pz);fd.append("prompt_en",pe);' +
     'fd.append("title",document.getElementById("title").value.trim());' +
     'fd.append("tags",document.getElementById("tags").value.trim());' +
+    'var ctl=new AbortController();var tm=setTimeout(function(){ctl.abort();},180000);' +
     'try{' +
-    'var r=await fetch("/api/edit",{method:"POST",body:fd});' +
+    'var r=await fetch("/api/edit",{method:"POST",body:fd,signal:ctl.signal});' +
+    'clearTimeout(tm);' +
     'var d=await r.json();' +
     'if(!d.ok){msg.innerHTML="<span class=err>"+(d.error||"fail")+"</span>";return;}' +
     'msg.innerHTML="<span class=ok>"+T_SAVED+"</span>";' +
     'setTimeout(function(){location.href="/f/"+SID;},800);' +
-    '}catch(e){msg.innerHTML="<span class=err>"+E_UPLOAD+e+"</span>";}' +
+    '}catch(e){clearTimeout(tm);var em=E_NET;if(e&&e.name==="AbortError")em=E_TIMEOUT;' +
+    'else if(e&&/failed to fetch|networkerror/i.test(String(e&&e.message||e)))em=E_NET;' +
+    'else em=E_UPLOAD+String(e);msg.innerHTML="<span class=err>"+em+"</span>";}' +
     '}' +
     '</script>', lang);
 }
@@ -1457,7 +1483,7 @@ export default {
       return new Response('服务端未配置 SIGN_SECRET', { status: 500 });
     }
 
-    if (path === '/healthz') return json({ ok: true, version: 'v3.3.1-delseqfix' });
+    if (path === '/healthz') return json({ ok: true, version: 'v3.3.2-uploadfix' });
 
     // 语言切换: ?lang=zh|en -> 写 Cookie 后跳回干净地址 (仅 GET)
     if (req.method === 'GET') {
