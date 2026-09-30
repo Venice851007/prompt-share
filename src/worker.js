@@ -333,12 +333,43 @@ function htmlPage(title, body, lang, desc) {
     '.hero p{color:#8b93a7;margin:0 0 22px}' +
     '.searchbar{display:flex;max-width:520px;margin:0 auto;gap:8px}' +
     '.searchbar input{flex:1}' +
-    '.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:18px;margin-top:8px}' +
+    '.masonry{columns:2;column-gap:14px;margin-top:8px}' +
+    '@media(min-width:760px){.masonry{columns:3;column-gap:16px}}' +
+    '@media(min-width:1100px){.masonry{columns:4}}' +
+    '.masonry .card-item{break-inside:avoid;margin:0 0 14px}' +
     '.card-item{background:#171a21;border:1px solid #262b36;border-radius:12px;overflow:hidden;' +
     'text-decoration:none;color:inherit;display:block;transition:transform .15s}' +
     '.card-item:hover{transform:translateY(-3px);border-color:#4f7cff66}' +
-    '.thumb{aspect-ratio:1/1;background:#0b0d11;overflow:hidden}' +
-    '.thumb img{width:100%;height:100%;object-fit:cover;display:block}' +
+    '.thumb{background:#0b0d11;overflow:hidden}' +
+    '.thumb img{width:100%;height:auto;display:block}' +
+    '.fhero{position:relative;margin:10px calc(50% - 50vw) 0;overflow:hidden;background:#0b0d11}' +
+    '.ftrack{display:flex;transition:transform .35s ease;height:min(62vh,560px);min-height:300px}' +
+    '.fslide{min-width:100%;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden}' +
+    '.fslide .fbg{position:absolute;inset:-20px;background-size:cover;background-position:center;filter:blur(28px) brightness(.5)}' +
+    '.fslide img.main{position:relative;max-width:100%;max-height:100%;object-fit:contain;z-index:1}' +
+    '.fcap{position:absolute;left:0;right:0;bottom:0;padding:44px 20px 18px;z-index:2;' +
+    'background:linear-gradient(transparent,rgba(0,0,0,.78));color:#fff;text-decoration:none}' +
+    '.fcap .t{font-size:20px;font-weight:700}' +
+    '.fcap .s{font-size:13px;color:#cdd5e8;margin-top:4px}' +
+    '.cnav{position:absolute;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.45);border:none;' +
+    'color:#fff;font-size:24px;line-height:1;width:46px;height:46px;border-radius:50%;cursor:pointer;z-index:3}' +
+    '.cnav.prev{left:12px}.cnav.next{right:12px}' +
+    '.cdots{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);display:flex;gap:7px;z-index:3}' +
+    '.cdots i{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.35)}' +
+    '.cdots i.on{background:#fff}' +
+    '.ccount{position:absolute;top:12px;right:14px;background:rgba(0,0,0,.55);color:#fff;' +
+    'font-size:12px;padding:4px 11px;border-radius:12px;z-index:3}' +
+    '.dcar{position:relative;background:#0b0d11;border-radius:12px;overflow:hidden}' +
+    '.dtrack{display:flex;transition:transform .3s ease}' +
+    '.dslide{min-width:100%;aspect-ratio:4/3;display:flex;align-items:center;justify-content:center;' +
+    'position:relative;overflow:hidden;cursor:zoom-in}' +
+    '.dslide .dbg{position:absolute;inset:-16px;background-size:cover;background-position:center;filter:blur(22px) brightness(.5)}' +
+    '.dslide img{position:relative;max-width:100%;max-height:100%;object-fit:contain;z-index:1}' +
+    '.lbox{position:fixed;inset:0;background:rgba(0,0,0,.94);z-index:99;display:none;align-items:center;justify-content:center}' +
+    '.lbox.open{display:flex}' +
+    '.lbox img{max-width:96vw;max-height:90vh;object-fit:contain}' +
+    '.lbox .lx{position:absolute;top:12px;right:16px;background:rgba(255,255,255,.12);border:none;color:#fff;' +
+    'font-size:20px;width:42px;height:42px;border-radius:50%;cursor:pointer;z-index:2}' +
     '.cmeta{padding:12px 14px}' +
     '.ct{font-size:15px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
     '.csub{font-size:12px;color:#8b93a7;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
@@ -552,12 +583,52 @@ function cardHtml(imgUrl, meta, lang) {
     '</div></a>';
 }
 
-async function gridHtml(env, metas, lang) {
+async function masonryHtml(env, metas, lang) {
   var parts = [];
   for (var i = 0; i < metas.length; i++) {
     parts.push(cardHtml(await signedImgUrl(env, metas[i].id), metas[i], lang));
   }
-  return '<div class="grid">' + parts.join('') + '</div>';
+  return '<div class="masonry">' + parts.join('') + '</div>';
+}
+
+/* 精选 hero: 全幅大图轮播, 客户端随机排序 */
+async function featHeroHtml(env, metas, lang) {
+  var slides = [];
+  for (var i = 0; i < metas.length; i++) {
+    var m = metas[i];
+    var u = await signedImgUrl(env, m.id);
+    var tags = (m.tags || []).map(function (x) { return '#' + escapeHtml(x); }).join(' ');
+    slides.push(
+      '<div class="fslide"><div class="fbg" style="background-image:url(\'' + u + '\')"></div>' +
+      '<img class="main" src="' + u + '" alt="' + escapeHtml(m.title || '') + '" draggable="false">' +
+      '<a class="fcap" href="/f/' + escapeHtml(m.id) + '">' +
+      '<div class="t">' + escapeHtml(m.title || STR[lang].untitled) + '</div>' +
+      '<div class="s">by ' + escapeHtml(m.author || m.owner || '?') + (tags ? ' · ' + tags : '') + '</div>' +
+      '</a></div>');
+  }
+  return '<div class="fhero"><div class="ftrack" id="ftrack">' + slides.join('') + '</div>' +
+    (slides.length > 1 ?
+      '<button class="cnav prev" onclick="fgo(fi-1)" aria-label="prev">‹</button>' +
+      '<button class="cnav next" onclick="fgo(fi+1)" aria-label="next">›</button>' +
+      '<div class="cdots" id="fdots"></div><div class="ccount" id="fcount"></div>'
+      : '') +
+    '<script>' +
+    'var fi=0,fN=' + slides.length + ';' +
+    'function fgo(n){fi=(n+fN)%fN;' +
+    'document.getElementById("ftrack").style.transform="translateX(-"+(fi*100)+"%)";' +
+    'var ds=document.querySelectorAll("#fdots i");for(var i=0;i<ds.length;i++)ds[i].className=i===fi?"on":"";' +
+    'var c=document.getElementById("fcount");if(c)c.textContent=(fi+1)+"/"+fN;}' +
+    '(function(){var tr=document.getElementById("ftrack");if(!tr||fN<2)return;' +
+    'var sl=Array.prototype.slice.call(tr.children);' +
+    'for(var i=sl.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var tmp=sl[i];sl[i]=sl[j];sl[j]=tmp;}' +
+    'for(var k=0;k<sl.length;k++)tr.appendChild(sl[k]);' +
+    'var dt=document.getElementById("fdots");' +
+    'for(var d=0;d<fN;d++){var el=document.createElement("i");if(d===0)el.className="on";dt.appendChild(el);}' +
+    'fgo(0);' +
+    'var x0=null;tr.addEventListener("touchstart",function(e){x0=e.touches[0].clientX;},{passive:true});' +
+    'tr.addEventListener("touchend",function(e){if(x0===null)return;' +
+    'var dx=e.changedTouches[0].clientX-x0;if(Math.abs(dx)>40)fgo(fi+(dx<0?1:-1));x0=null;},{passive:true});' +
+    '})();</script></div>';
 }
 
 function pagerHtml(base, page, hasMore, t) {
@@ -582,18 +653,18 @@ async function galleryPage(env, url, lang) {
   var u = new URL(url);
   var page = parseInt(u.searchParams.get('page') || '1', 10) || 1;
 
-  // 精选
+  // 精选: 全幅大图轮播 (随机顺序)
   var feat = await listByIndex(env, 'idx:featured:', 1);
   var featItems = feat.items.slice(0, 8);
   var featHtml = '';
   if (featItems.length) {
-    featHtml = '<div class="sec-t"><h2>' + t.featured + '</h2></div>' + await gridHtml(env, featItems, lang);
+    featHtml = '<div class="sec-t"><h2>' + t.featured + '</h2></div>' + await featHeroHtml(env, featItems, lang);
   }
 
-  // 最新
+  // 最新: 小红书式瀑布流
   var latest = await listByIndex(env, 'idx:new:', page);
   var latestHtml = latest.items.length
-    ? await gridHtml(env, latest.items, lang) + pagerHtml('/?page=', page, latest.hasMore, t)
+    ? await masonryHtml(env, latest.items, lang) + pagerHtml('/?page=', page, latest.hasMore, t)
     : '<div class="empty">' + t.emptyHome + '</div>';
 
   var body =
@@ -619,7 +690,7 @@ async function tagPage(env, url, tag, lang) {
   var r = await listByIndex(env, 'idx:tag:' + tag + ':', page);
   var body = '<div class="sec-t"><h2>🏷️ #' + escapeHtml(tag) + '</h2><a href="/">' + t.backHome + '</a></div>' +
     (r.items.length
-      ? await gridHtml(env, r.items, lang) + pagerHtml('/tag/' + encodeURIComponent(tag) + '?page=', page, r.hasMore, t)
+      ? await masonryHtml(env, r.items, lang) + pagerHtml('/tag/' + encodeURIComponent(tag) + '?page=', page, r.hasMore, t)
       : '<div class="empty">' + t.tagEmpty + '</div>') +
     '<div class="sec-t"><h2>' + t.moreTags + '</h2></div>' + tagCloudHtml(lang);
   return htmlPage('#' + tag + ' - PromptShare', body, lang);
@@ -657,7 +728,7 @@ async function searchPage(env, url, lang) {
       }
     }
     body += hits.length
-      ? '<p class="hint">' + t.foundN.replace('{n}', hits.length).replace('{s}', SEARCH_SCAN) + '</p>' + await gridHtml(env, hits, lang)
+      ? '<p class="hint">' + t.foundN.replace('{n}', hits.length).replace('{s}', SEARCH_SCAN) + '</p>' + await masonryHtml(env, hits, lang)
       : '<div class="empty">' + t.notFoundQ + '</div>';
   } else {
     body += '<div class="hint">' + t.searchHint + '</div>' + tagCloudHtml(lang);
@@ -676,24 +747,52 @@ async function sharePage(env, id, lang, email, isAdm) {
   }
   var meta = JSON.parse(raw);
   var imgs = imgList(meta);
-  var imgUrl = await signedImgUrl(env, id, imgs[0].seq);
-  var thumbStrip = '';
-  if (imgs.length > 1) {
-    var ths = [];
-    for (var hi = 0; hi < imgs.length; hi++) {
-      var hurl = await signedImgUrl(env, id, imgs[hi].seq);
-      ths.push('<img src="' + hurl + '" data-full="' + hurl + '" onclick="swapImg(this)"' +
-        ' style="width:72px;height:72px;object-fit:cover;border-radius:8px;cursor:pointer' +
-        (hi === 0 ? ';outline:2px solid #4f8cff' : '') + '">');
-    }
-    thumbStrip = '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">' + ths.join('') + '</div>' +
-      '<script>function swapImg(el){' +
-      'document.getElementById("mainimg").src=el.getAttribute("data-full");' +
-      'var all=el.parentNode.querySelectorAll("img");' +
-      'for(var i=0;i<all.length;i++)all[i].style.outline="";' +
-      'el.style.outline="2px solid #4f8cff";' +
-      '}</script>';
-  }
+  var imgUrls = [];
+  for (var hi = 0; hi < imgs.length; hi++) imgUrls.push(await signedImgUrl(env, id, imgs[hi].seq));
+  var dslides = imgUrls.map(function (u, i) {
+    return '<div class="dslide" onclick="zoomChk(' + i + ')"><div class="dbg" style="background-image:url(\'' + u + '\')"></div>' +
+      '<img src="' + u + '" alt="分享图片" draggable="false"></div>';
+  }).join('');
+  var carHtml =
+    '<div class="dcar" id="dcar"><div class="dtrack" id="dtrack">' + dslides + '</div>' +
+    (imgUrls.length > 1 ?
+      '<button class="cnav prev" onclick="event.stopPropagation();dgo(di-1)" aria-label="prev">‹</button>' +
+      '<button class="cnav next" onclick="event.stopPropagation();dgo(di+1)" aria-label="next">›</button>' +
+      '<div class="cdots" id="ddots"></div><div class="ccount" id="dcount"></div>'
+      : '') +
+    '</div>' +
+    '<div class="lbox" id="lbox"><button class="lx" onclick="closeLb()">✕</button>' +
+    '<button class="cnav prev" onclick="event.stopPropagation();lgo(li-1)" aria-label="prev">‹</button>' +
+    '<button class="cnav next" onclick="event.stopPropagation();lgo(li+1)" aria-label="next">›</button>' +
+    '<img id="lbimg" alt="大图" draggable="false"><div class="ccount" id="lcount"></div></div>' +
+    '<script>' +
+    'var DIMGS=' + JSON.stringify(imgUrls) + ';var di=0,li=0;' +
+    'function dgo(n){di=(n+DIMGS.length)%DIMGS.length;' +
+    'document.getElementById("dtrack").style.transform="translateX(-"+(di*100)+"%)";' +
+    'var ds=document.querySelectorAll("#ddots i");for(var i=0;i<ds.length;i++)ds[i].className=i===di?"on":"";' +
+    'var c=document.getElementById("dcount");if(c)c.textContent=(di+1)+"/"+DIMGS.length;}' +
+    'function zoomChk(i){if(Date.now()-(window.__swp||0)<400)return;openLb(i);}' +
+    'function openLb(i){li=i;document.getElementById("lbox").classList.add("open");lshow();}' +
+    'function lshow(){document.getElementById("lbimg").src=DIMGS[li];' +
+    'var c=document.getElementById("lcount");if(c)c.textContent=(li+1)+"/"+DIMGS.length;}' +
+    'function lgo(n){li=(n+DIMGS.length)%DIMGS.length;lshow();}' +
+    'function closeLb(){document.getElementById("lbox").classList.remove("open");}' +
+    '(function(){var dt=document.getElementById("ddots");' +
+    'if(dt){for(var d=0;d<DIMGS.length;d++){var el=document.createElement("i");if(d===0)el.className="on";dt.appendChild(el);}}' +
+    'dgo(0);' +
+    'function swipe(elm,fn){var x0=null;' +
+    'elm.addEventListener("touchstart",function(e){x0=e.touches[0].clientX;},{passive:true});' +
+    'elm.addEventListener("touchend",function(e){if(x0===null)return;' +
+    'var dx=e.changedTouches[0].clientX-x0;if(Math.abs(dx)>40){window.__swp=Date.now();fn(dx<0?1:-1);}x0=null;},{passive:true});}' +
+    'swipe(document.getElementById("dcar"),function(d){dgo(di+d);});' +
+    'swipe(document.getElementById("lbox"),function(d){lgo(li+d);});' +
+    'document.getElementById("lbox").addEventListener("click",function(e){if(e.target===this)closeLb();});' +
+    'document.addEventListener("keydown",function(e){' +
+    'var open=document.getElementById("lbox").classList.contains("open");' +
+    'if(e.key==="Escape"&&open)closeLb();' +
+    'else if(e.key==="ArrowRight"){if(open)lgo(li+1);else dgo(di+1);}' +
+    'else if(e.key==="ArrowLeft"){if(open)lgo(li-1);else dgo(di-1);}});' +
+    '})();</script>';
   var title = meta.title || t.untitled;
   var prompt = promptFor(meta, lang);
   var canEd = isAdm || canEdit(env, email, meta);
@@ -715,7 +814,7 @@ async function sharePage(env, id, lang, email, isAdm) {
     '<p><span class="badge">' + escapeHtml(meta.author || meta.owner || '?') + '</span>' +
     '<span class="hint">' + fmtDate(meta.createdAt, lang) + ' ' + t.sharedBy + '</span></p>' +
     (tags ? '<p>' + tags + '</p>' : '') +
-    '<div class="card"><img id="mainimg" class="full" src="' + imgUrl + '" alt="分享图片">' + thumbStrip + '</div>' +
+    '<div class="card" style="padding:12px">' + carHtml + '</div>' +
     '<div class="card"><div class="hint">' + t.promptLabel + ' ' +
     '<button style="padding:4px 14px;font-size:13px" onclick="copyP()">' + t.copyPrompt + '</button>' + otherLink + '</div>' +
     '<pre id="p">' + escapeHtml(prompt) + '</pre>' +
@@ -1483,7 +1582,7 @@ export default {
       return new Response('服务端未配置 SIGN_SECRET', { status: 500 });
     }
 
-    if (path === '/healthz') return json({ ok: true, version: 'v3.3.2-uploadfix' });
+    if (path === '/healthz') return json({ ok: true, version: 'v3.4-xiaohongshu' });
 
     // 语言切换: ?lang=zh|en -> 写 Cookie 后跳回干净地址 (仅 GET)
     if (req.method === 'GET') {
