@@ -1,0 +1,24 @@
+# wrangler.toml — prompt-share v2
+# 给 Workers Builds (GitHub 自动部署) 用。
+# 注意: SIGN_SECRET 不要写进文件, 它已在 Dashboard -> Settings -> Variables -> Secrets 里设置,
+# 通过 CI 部署时 secret 会保留, 不会被覆盖。
+
+name = "prompt-share"
+main = "src/worker.js"
+compatibility_date = "2026-09-01"
+
+# R2 图床 (私有 bucket, 已建好)
+[[r2_buckets]]
+binding = "IMGS"
+bucket_name = "prompt-share-imgs"
+
+# KV: 分享元数据 + 待审队列 + 限流计数器
+[[kv_namespaces]]
+binding = "SHARE"
+id = "c5832ab1772d4ff68bf430abc08e3529"
+
+# 普通变量 (与 Dashboard 里设置的值保持一致)
+[vars]
+ACCESS_TEAM_DOMAIN = "venice851007.cloudflareaccess.com"
+ACCESS_AUD = "07235d6fab388c8f93a43ea892e851283eb62cd63ca5aa4028579d9806aef831"
+ADMIN_EMAILS = "venice851007@gmail.com"
